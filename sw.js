@@ -1,13 +1,13 @@
-// FabriTrack - Service Worker con soporte para Firebase Firestore
-const CACHE_NAME = 'fabricatrack-v2';
+// FabriTrack - Service Worker v3
+const CACHE_NAME = 'fabricatrack-v3';
 const STATIC_ASSETS = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './manifest.json',
-  './icon-192.svg',
-  './icon-512.svg'
+  '/',
+  '/index.html',
+  '/styles.css',
+  '/app.js',
+  '/manifest.json',
+  '/icon-192.svg',
+  '/icon-512.svg'
 ];
 
 self.addEventListener('install', (e) => {
@@ -29,15 +29,26 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Dejar que todas las peticiones a Firebase y Google pasen directamente a la red
-  if (url.origin.includes('firebase') || url.origin.includes('googleapis') || url.origin.includes('gstatic')) {
+  // No interceptar peticiones a Firebase, APIs de Google o Auth
+  if (
+    url.origin.includes('firebase') ||
+    url.origin.includes('googleapis') ||
+    url.origin.includes('gstatic') ||
+    url.origin.includes('google.com')
+  ) {
     return;
   }
 
+  // Para navegación de páginas HTML, intentar red primero, respaldo caché
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match('/') || caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Para assets estáticos: caché primero, respaldo red
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).catch(() => caches.match('./index.html'));
-    })
+    caches.match(e.request).then(cached => cached || fetch(e.request))
   );
 });
