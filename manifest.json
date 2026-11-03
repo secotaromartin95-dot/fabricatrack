@@ -1,0 +1,25 @@
+{
+  "name": "FabriTrack - Control de Fabricación",
+  "short_name": "FabriTrack",
+  "description": "Gestión de fabricación: equipos, procesos, fotos y KPIs",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1a237e",
+  "theme_color": "#1a237e",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a237e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="FabriTrack" />
+  <title>FabriTrack - Control de Fabricación en Tiempo Real</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Firebase SDKs (Compatibles sin build step) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- TOP NAV -->
+    <nav class="topnav">
+      <button class="nav-menu-btn" onclick="toggleSidebar()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="nav-title">
+        <span class="nav-logo">⚙️</span>
+        <span id="nav-title-text">FabriTrack</span>
+      </div>
+      <div class="sync-badge" id="sync-status" title="Estado de conexión con Firebase">
+        <span class="sync-dot"></span>
+        <span class="sync-text" id="sync-text">Conectando...</span>
+      </div>
+      <button class="nav-action-btn" id="nav-action-btn" onclick="showNewEquipoModal()" title="Nuevo equipo">+</button>
+    </nav>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-logo">⚙️ FabriTrack</span>
+        <button class="sidebar-close" onclick="toggleSidebar()">✕</button>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="sidebar-link active" onclick="navigate('dashboard'); toggleSidebar()">
+          <span class="sidebar-icon">🏠</span> Dashboard
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigate('equipos'); toggleSidebar()">
+          <span class="sidebar-icon">🏭</span> Equipos
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigate('kpi'); toggleSidebar()">
+          <span class="sidebar-icon">📊</span> KPIs
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigate('reporte'); toggleSidebar()">
+          <span class="sidebar-icon">📋</span> Reporte Diario
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigate('plantillas'); toggleSidebar()">
+          <span class="sidebar-icon">📝</span> Plantillas
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="sidebar-status-info">🔥 Conectado a Firestore</span>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="main-content">
+
+      <!-- ======================== DASHBOARD ======================== -->
+      <section id="view-dashboard" class="view active">
+        <div class="view-header">
+          <h1>Panel General</h1>
+          <span id="dashboard-date" class="date-badge"></span>
+        </div>
+
+        <!-- Resumen stats -->
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card stat-blue">
+            <div class="stat-number" id="stat-total">0</div>
+            <div class="stat-label">Equipos activos</div>
+          </div>
+          <div class="stat-card stat-green">
+            <div class="stat-number" id="stat-ok">0</div>
+            <div class="stat-label">A tiempo</div>
+          </div>
+          <div class="stat-card stat-orange">
+            <div class="stat-number" id="stat-riesgo">0</div>
+            <div class="stat-label">En riesgo</div>
+          </div>
+          <div class="stat-card stat-red">
+            <div class="stat-number" id="stat-atrasado">0</div>
+            <div class="stat-label">Atrasados</div>
+          </div>
+        </div>
+
+        <!-- Cards de equipos activos -->
+        <h2 class="section-title">Equipos en Producción (En vivo)</h2>
+        <div class="equipos-grid" id="dashboard-equipos-grid">
+          <div class="empty-state">
+            <div class="empty-icon">🏭</div>
+            <p>Cargando equipos desde la base de datos...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================== EQUIPOS ======================== -->
+      <section id="view-equipos" class="view">
+        <div class="view-header">
+          <h1>Todos los Equipos</h1>
+          <button class="btn btn-primary btn-sm" onclick="showNewEquipoModal()">+ Nuevo</button>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="equipo-search" placeholder="🔍 Buscar por cliente o equipo..." class="search-input" oninput="filterEquipos()">
+          <select id="equipo-filter-estado" class="filter-select" onchange="filterEquipos()">
+            <option value="">Todos los estados</option>
+            <option value="en_produccion">En producción</option>
+            <option value="terminado">Terminados</option>
+            <option value="pausado">Pausados</option>
+          </select>
+        </div>
+        <div class="equipos-list" id="equipos-list"></div>
+      </section>
+
+      <!-- ======================== DETALLE EQUIPO ======================== -->
+      <section id="view-equipo-detalle" class="view">
+        <div class="view-header">
+          <button class="btn-back" onclick="navigate('equipos')">← Volver</button>
+          <div class="equipo-detalle-titulo" id="detalle-titulo"></div>
+          <div class="equipo-actions-top">
+            <button class="btn btn-sm btn-outline" onclick="editEquipo()">✏️ Editar</button>
+            <button class="btn btn-sm btn-primary" onclick="showReporteEquipoModal()">📋 Reporte</button>
+          </div>
+        </div>
+
+        <!-- Info equipo -->
+        <div class="equipo-info-card" id="detalle-info-card"></div>
+
+        <!-- Barra de progreso general -->
+        <div class="progress-section">
+          <div class="progress-header">
+            <span>Progreso total</span>
+            <span id="detalle-progreso-pct">0%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="detalle-progreso-bar"></div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('procesos', this)">Procesos</button>
+          <button class="tab" onclick="switchTab('fotos', this)">Fotos</button>
+          <button class="tab" onclick="switchTab('historial', this)">Historial</button>
+          <button class="tab" onclick="switchTab('kpi-detalle', this)">KPIs</button>
+        </div>
+
+        <!-- Tab: Procesos -->
+        <div id="tab-procesos" class="tab-content active">
+          <div class="procesos-toolbar">
+            <button class="btn btn-sm btn-outline" onclick="showAddProcesoModal()">+ Agregar proceso</button>
+            <span class="help-mini">💡 Tocá el ícono (⬜/🔄/✅/⚠️) para cambiar el estado al instante</span>
+          </div>
+          <div id="procesos-list" class="procesos-list"></div>
+        </div>
+
+        <!-- Tab: Fotos -->
+        <div id="tab-fotos" class="tab-content">
+          <div class="fotos-toolbar">
+            <label class="btn btn-sm btn-outline" id="btn-subir-foto">
+              📷 Subir foto de progreso
+              <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="handleFotoUpload(event)">
+            </label>
+            <span class="help-mini">Las fotos se optimizan automáticamente y se sincronizan al instante</span>
+          </div>
+          <div id="fotos-grid" class="fotos-grid"></div>
+        </div>
+
+        <!-- Tab: Historial -->
+        <div id="tab-historial" class="tab-content">
+          <div id="historial-list" class="historial-list"></div>
+        </div>
+
+        <!-- Tab: KPIs -->
+        <div id="tab-kpi-detalle" class="tab-content">
+          <div id="kpi-detalle-content" class="kpi-content"></div>
+        </div>
+      </section>
+
+      <!-- ======================== KPIs ======================== -->
+      <section id="view-kpi" class="view">
+        <div class="view-header">
+          <h1>KPIs de Fabricación</h1>
+        </div>
+        <div id="kpi-content" class="kpi-content"></div>
+      </section>
+
+      <!-- ======================== REPORTE DIARIO ======================== -->
+      <section id="view-reporte" class="view">
+        <div class="view-header">
+          <h1>Reporte Diario</h1>
+          <span id="reporte-date" class="date-badge"></span>
+        </div>
+        <div class="reporte-options">
+          <label class="reporte-tipo-label">
+            <input type="radio" name="reporte-tipo" value="inicio" checked onchange="updateReportePreview()"> 
+            <span>📋 Tareas del Día (Inicio)</span>
+          </label>
+          <label class="reporte-tipo-label">
+            <input type="radio" name="reporte-tipo" value="fin" onchange="updateReportePreview()">
+            <span>✅ Fin de Jornada</span>
+          </label>
+        </div>
+        <div class="reporte-preview" id="reporte-preview"></div>
+        <div class="reporte-actions">
+          <button class="btn btn-outline" onclick="copyReporte()">📋 Copiar reporte</button>
+          <button class="btn btn-primary" onclick="shareReporte()">📲 Enviar por WhatsApp</button>
+        </div>
+      </section>
+
+      <!-- ======================== PLANTILLAS ======================== -->
+      <section id="view-plantillas" class="view">
+        <div class="view-header">
+          <h1>Plantillas de Procesos</h1>
+          <button class="btn btn-primary btn-sm" onclick="showNewPlantillaModal()">+ Nueva</button>
+        </div>
+        <p class="help-text">Creá plantillas reutilizables según el tipo de equipo (ej: Tanque 5000Lts, Semirremolque 16500Lts, Tolva, Batea).</p>
+        <div id="plantillas-list" class="plantillas-list"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ======================== MODALES ======================== -->
+
+  <!-- Modal nuevo equipo -->
+  <div class="modal-overlay" id="modal-nuevo-equipo">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-equipo-title">Nuevo Equipo</h2>
+        <button class="modal-close" onclick="closeModal('modal-nuevo-equipo')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="equipo-edit-id">
+        <div class="form-group">
+          <label>Cliente / Nombre *</label>
+          <input type="text" id="eq-cliente" placeholder="Ej: HERRERA, PONCE, TELLO..." class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label>Descripción del equipo *</label>
+          <input type="text" id="eq-descripcion" placeholder="Ej: Semirremolque 16500 Lts, Tanque 5000 Lts..." class="form-input" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group form-col">
+            <label>Fecha de inicio</label>
+            <input type="date" id="eq-fecha-inicio" class="form-input">
+          </div>
+          <div class="form-group form-col">
+            <label>Fecha estimada de entrega</label>
+            <input type="date" id="eq-fecha-entrega" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Operario / Responsable principal</label>
+          <input type="text" id="eq-operario" placeholder="Ej: Cubillos, Ponce, Herrera, Mini..." class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Notas adicionales</label>
+          <textarea id="eq-notas" placeholder="Ej: Chasis arenar y pintar, enmasillar..." class="form-textarea" rows="2"></textarea>
+        </div>
+        <div class="form-group" id="div-select-plantilla">
+          <label>Cargar procesos desde plantilla</label>
+          <select id="eq-plantilla" class="form-input" onchange="loadPlantillaInModal()">
+            <option value="">— Seleccionar plantilla —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Procesos iniciales (podés agregar o quitar luego)</label>
+          <div id="modal-procesos-lista" class="modal-procesos-lista"></div>
+          <button type="button" class="btn btn-sm btn-outline" onclick="addProcesoToModal()" style="margin-top:8px">+ Agregar proceso</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-nuevo-equipo')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveEquipo()">Guardar en la nube</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal agregar proceso -->
+  <div class="modal-overlay" id="modal-add-proceso">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>Agregar Proceso</h2>
+        <button class="modal-close" onclick="closeModal('modal-add-proceso')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nombre del proceso *</label>
+          <input type="text" id="proc-nombre" placeholder="Ej: Soldar zapatos, Parar rompeolas..." class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Duración estimada (días)</label>
+          <input type="number" id="proc-duracion" placeholder="1" class="form-input" min="0" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Responsable</label>
+          <input type="text" id="proc-responsable" placeholder="Ej: Ponce, Cubillos..." class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Notas</label>
+          <textarea id="proc-notas" class="form-textarea" rows="2" placeholder="Detalles u observaciones..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-add-proceso')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveProceso()">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal editar proceso -->
+  <div class="modal-overlay" id="modal-edit-proceso">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>Editar Proceso</h2>
+        <button class="modal-close" onclick="closeModal('modal-edit-proceso')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-proc-id">
+        <div class="form-group">
+          <label>Nombre del proceso *</label>
+          <input type="text" id="edit-proc-nombre" class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select id="edit-proc-estado" class="form-input" onchange="toggleEditProcesoFechas()">
+            <option value="pendiente">⬜ Pendiente</option>
+            <option value="en_proceso">🔄 En proceso</option>
+            <option value="terminado">✅ Terminado (OK)</option>
+            <option value="con_atraso">⚠️ Con atraso</option>
+          </select>
+        </div>
+        <div id="edit-proc-fechas" style="display:none">
+          <div class="form-group">
+            <label>Fecha de inicio real</label>
+            <input type="date" id="edit-proc-inicio" class="form-input">
+          </div>
+          <div class="form-group" id="edit-proc-fin-group" style="display:none">
+            <label>Fecha de fin real</label>
+            <input type="date" id="edit-proc-fin" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Duración estimada (días)</label>
+          <input type="number" id="edit-proc-duracion" class="form-input" min="0" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Responsable</label>
+          <input type="text" id="edit-proc-responsable" class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Notas</label>
+          <textarea id="edit-proc-notas" class="form-textarea" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-edit-proceso')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveEditProceso()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal plantilla -->
+  <div class="modal-overlay" id="modal-plantilla">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-plantilla-title">Nueva Plantilla</h2>
+        <button class="modal-close" onclick="closeModal('modal-plantilla')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="plantilla-edit-id">
+        <div class="form-group">
+          <label>Nombre de la plantilla *</label>
+          <input type="text" id="pl-nombre" placeholder="Ej: Tanque Cisterna 10000Lts" class="form-input">
+        </div>
+        <div class="form-group">
+          <label>Descripción</label>
+          <input type="text" id="pl-descripcion" class="form-input" placeholder="Ej: Procesos de calderería, arenado y pintura">
+        </div>
+        <div class="form-group">
+          <label>Secuencia de Procesos</label>
+          <div id="pl-procesos-lista" class="modal-procesos-lista"></div>
+          <button type="button" class="btn btn-sm btn-outline" onclick="addProcesoToPlantilla()" style="margin-top:8px">+ Agregar proceso</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-plantilla')">Cancelar</button>
+        <button class="btn btn-primary" onclick="savePlantilla()">Guardar plantilla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal visor de foto -->
+  <div class="modal-overlay" id="modal-foto" onclick="closeModal('modal-foto')">
+    <div class="modal-foto-viewer" onclick="event.stopPropagation()">
+      <img id="modal-foto-img" src="" alt="Foto de progreso">
+      <div class="modal-foto-info">
+        <span id="modal-foto-caption"></span>
+      </div>
+      <button class="modal-close modal-close-foto" onclick="closeModal('modal-foto')">✕</button>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
