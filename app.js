@@ -1,6 +1,6 @@
 // ============================================================
 //  FabriTrack - app.js
-//  Control de fabricación con sincronización en tiempo real (Firebase Firestore)
+//  Control de fabricación con Google Auth y Firestore en tiempo real
 // ============================================================
 
 /* ---- CONFIGURACIÓN DE FIREBASE ---- */
@@ -13,37 +13,43 @@ const firebaseConfig = {
   appId: "1:570345456005:web:d7c68840548983b6dc44ec"
 };
 
-// Inicializar Firebase y Firestore
+// Inicializar Firebase, Auth y Firestore
 firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
 const db = firebase.firestore();
 
-// Habilitar persistencia offline (para trabajar sin conexión en el taller)
+// Persistencia offline de Firestore
 try {
   db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Persistencia Firestore: múltiples pestañas abiertas');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Persistencia Firestore no soportada por el navegador');
-    }
+    console.warn('Persistencia Firestore info:', err.code);
   });
 } catch (e) {
-  console.warn('Error al activar persistencia offline', e);
+  console.warn('Persistencia Firestore no disponible', e);
 }
 
-/* ---- ESTADO GLOBAL DE LA APP ---- */
+/* ============================================================
+   ADMINISTRADORES AUTORIZADOS (ACCESO EXCLUSIVO)
+   ============================================================ */
+const ADMIN_EMAILS = [
+  "secotaro.martin95@gmail.com",
+  "jonathanadmin5@gmail.com"
+];
+
+/* ---- ESTADO GLOBAL ---- */
 let state = {
+  currentUser: null,
+  isAdmin: false,
   equipos: [],
   plantillas: [],
   currentEquipoId: null,
   currentView: 'dashboard',
-  isOnline: false,
-  initialLoaded: false
+  syncInitialized: false
 };
 
 /* ---- INICIALIZACIÓN ---- */
 document.addEventListener('DOMContentLoaded', () => {
   updateDates();
-  initRealtimeSync();
+  initAuthListener();
 
   // Registrar Service Worker para PWA
   if ('serviceWorker' in navigator) {
@@ -65,9 +71,100 @@ function updateSyncBadge(status, text) {
   const badge = document.getElementById('sync-status');
   const textEl = document.getElementById('sync-text');
   if (!badge || !textEl) return;
-
   badge.className = 'sync-badge ' + status;
   textEl.textContent = text;
+}
+
+/* ============================================================
+   AUTENTICACIÓN CON GOOGLE Y RESTRICCIÓN DE ROLES
+   ============================================================ */
+function initAuthListener() {
+  auth.onAuthStateChanged(user => {
+    const loginScreen = document.getElementById('login-screen');
+    const appEl = document.getElementById('app');
+    const boxDefault = document.getElementById('login-box-default');
+    const boxUnauth = document.getElementById('login-box-unauthorized');
+    const unauthMsg = document.getElementById('unauth-email-msg');
+
+    if (!user) {
+      // No hay sesión iniciada
+      state.currentUser = null;
+      state.isAdmin = false;
+      loginScreen.style.display = 'flex';
+      appEl.style.display = 'none';
+      boxDefault.style.display = 'block';
+      boxUnauth.style.display = 'none';
+      return;
+    }
+
+    const email = (user.email || '').toLowerCase().trim();
+    const isAuthorized = ADMIN_EMAILS.includes(email);
+
+    if (!isAuthorized) {
+      // Correo no autorizado
+      state.currentUser = user;
+      state.isAdmin = false;
+      loginScreen.style.display = 'flex';
+      appEl.style.display = 'none';
+      boxDefault.style.display = 'none';
+      boxUnauth.style.display = 'block';
+      unauthMsg.textContent = `La cuenta "${email}" no tiene permisos de administrador.`;
+      return;
+    }
+
+    // Usuario Administrador Autorizado
+    state.currentUser = user;
+    state.isAdmin = true;
+
+    // Actualizar perfil en el menú lateral
+    const avatarEl = document.getElementById('user-avatar');
+    const nameEl = document.getElementById('user-name');
+    if (avatarEl) {
+      avatarEl.src = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email)}&background=1a237e&color=fff`;
+    }
+    if (nameEl) {
+      nameEl.textContent = user.displayName || email.split('@')[0];
+    }
+
+    // Mostrar aplicación
+    loginScreen.style.display = 'none';
+    appEl.style.display = 'block';
+
+    showToast(`Bienvenido, ${user.displayName || email} 👑`);
+
+    // Iniciar sincronización en tiempo real (solo una vez)
+    if (!state.syncInitialized) {
+      state.syncInitialized = true;
+      initRealtimeSync();
+    } else {
+      refreshCurrentView();
+    }
+  });
+}
+
+async function loginWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    showToast('Abriendo inicio de sesión con Google...');
+    await auth.signInWithPopup(provider);
+  } catch (error) {
+    console.error('Error al iniciar sesión con Google:', error);
+    if (error.code === 'auth/popup-blocked') {
+      // Si el navegador en el celular bloqueó la ventana emergente, usar redirección
+      auth.signInWithRedirect(provider);
+    } else {
+      showToast('⚠️ No se pudo iniciar sesión: ' + error.message);
+    }
+  }
+}
+
+async function logout() {
+  try {
+    await auth.signOut();
+    showToast('Sesión cerrada');
+  } catch (err) {
+    console.error('Error al cerrar sesión:', err);
+  }
 }
 
 /* ============================================================
@@ -76,7 +173,7 @@ function updateSyncBadge(status, text) {
 function initRealtimeSync() {
   updateSyncBadge('syncing', 'Conectando...');
 
-  // 1. Escuchar colección de PLANTILLAS
+  // 1. Escuchar PLANTILLAS
   db.collection('plantillas').onSnapshot(snapshot => {
     const plantillas = [];
     snapshot.forEach(doc => {
@@ -88,17 +185,17 @@ function initRealtimeSync() {
     console.error('Error al escuchar plantillas:', err);
   });
 
-  // 2. Escuchar colección de EQUIPOS en tiempo real
+  // 2. Escuchar EQUIPOS en tiempo real
   db.collection('equipos').onSnapshot(async snapshot => {
     const equipos = [];
     snapshot.forEach(doc => {
       equipos.push({ id: doc.id, ...doc.data() });
     });
 
-    // Si Firestore está totalmente vacío en la primera carga, sembramos los equipos iniciales
+    // Si Firestore está vacío, sembramos datos iniciales
     if (equipos.length === 0 && !state.initialLoaded) {
       state.initialLoaded = true;
-      updateSyncBadge('syncing', 'Creando datos iniciales...');
+      updateSyncBadge('syncing', 'Cargando datos iniciales...');
       await seedInitialDataToFirestore();
       return;
     }
@@ -107,12 +204,11 @@ function initRealtimeSync() {
     state.equipos = equipos;
     updateSyncBadge('online', 'En vivo');
 
-    // Refrescar vista actual
     refreshCurrentView();
   }, err => {
     console.error('Error al conectar con Firestore:', err);
     updateSyncBadge('offline', 'Sin conexión');
-    // Si falla la red, intentar cargar desde caché local
+    // Respaldo de caché local
     const saved = localStorage.getItem('fabricatrack_cache');
     if (saved) {
       try {
@@ -124,7 +220,6 @@ function initRealtimeSync() {
 }
 
 function refreshCurrentView() {
-  // Guardar copia local de respaldo
   try {
     localStorage.setItem('fabricatrack_cache', JSON.stringify(state.equipos));
   } catch (e) {}
@@ -142,12 +237,12 @@ function refreshCurrentView() {
   }
 }
 
-/* ---- OPERACIONES EN LA NUBE (FIRESTORE) ---- */
+/* ---- OPERACIONES FIRESTORE ---- */
 async function saveEquipoToCloud(equipo) {
   try {
     updateSyncBadge('syncing', 'Guardando...');
     const dataToSave = { ...equipo };
-    delete dataToSave.id; // Firestore usa el id como clave del documento
+    delete dataToSave.id;
     await db.collection('equipos').doc(equipo.id).set(dataToSave);
     updateSyncBadge('online', 'En vivo');
     return true;
@@ -195,7 +290,7 @@ async function deletePlantillaFromCloud(plantillaId) {
 }
 
 /* ============================================================
-   DATOS INICIALES (BASADOS EN TUS REPORTES REALES)
+   DATOS INICIALES (BASADOS EN TUS PARTES DIARIOS)
    ============================================================ */
 async function seedInitialDataToFirestore() {
   const hoy = todayStr();
@@ -203,7 +298,6 @@ async function seedInitialDataToFirestore() {
   const en5 = offsetDate(hoy, 5);
   const en12 = offsetDate(hoy, 12);
 
-  // Plantillas estándar
   const plantillasDemo = [
     {
       id: 'pl-tanque-cisterna',
@@ -251,7 +345,6 @@ async function seedInitialDataToFirestore() {
     await savePlantillaToCloud(pl);
   }
 
-  // Equipos iniciales tomados directamente de los partes diarios
   const equiposDemo = [
     {
       id: 'eq-herrera-16500-1',
@@ -391,7 +484,6 @@ function showToast(msg, duration = 2500) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 
-/* ---- CÁLCULO DE PROGRESO Y ESTADOS ---- */
 function calcProgreso(equipo) {
   if (!equipo.procesos || equipo.procesos.length === 0) return 0;
   const terminados = equipo.procesos.filter(p => p.estado === 'terminado').length;
@@ -630,7 +722,6 @@ function renderEquipoDetalle() {
     ${eq.notas ? `<div class="info-item" style="flex-basis:100%"><span class="info-label">Observaciones</span><span class="info-value">${esc(eq.notas)}</span></div>` : ''}
   `;
 
-  // Progreso
   const prog = calcProgreso(eq);
   document.getElementById('detalle-progreso-pct').textContent = prog + '%';
   document.getElementById('detalle-progreso-bar').style.width = prog + '%';
@@ -649,7 +740,7 @@ function switchTab(tabName, btn) {
 }
 
 /* ============================================================
-   PROCESOS (SUBPROCESOS)
+   PROCESOS
    ============================================================ */
 function renderProcesos(eq) {
   const container = document.getElementById('procesos-list');
@@ -714,11 +805,8 @@ async function cycleProcesoEstado(procId) {
 
   addHistorial(eq, `Proceso "${proc.nombre}" cambió de ${prev} a ${next}`, 'proceso');
 
-  // Optimistic UI update
   renderEquipoDetalle();
   showToast(`Estado: ${next.replace('_', ' ')} ✓`);
-
-  // Guardar en la nube
   await saveEquipoToCloud(eq);
 }
 
@@ -836,7 +924,7 @@ async function saveEditProceso() {
 }
 
 /* ============================================================
-   FOTOS DE PROGRESO (COMPRESIÓN INTELIGENTE + NUBE)
+   FOTOS DE PROGRESO
    ============================================================ */
 function renderFotos(eq) {
   const grid = document.getElementById('fotos-grid');
@@ -856,7 +944,6 @@ function renderFotos(eq) {
   `).join('');
 }
 
-// Redimensionar imagen en el cliente para que sea liviana (~70KB) y suba rápido en el taller
 function compressImage(file, maxWidth = 900, quality = 0.72) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -933,12 +1020,12 @@ function openFotoModal(fotoId) {
 }
 
 /* ============================================================
-   HISTORIAL DE ACTIVIDAD
+   HISTORIAL
    ============================================================ */
 function addHistorial(eq, texto, tipo = 'info') {
   if (!eq.historial) eq.historial = [];
   eq.historial.unshift({ fecha: todayStr(), texto, tipo });
-  if (eq.historial.length > 50) eq.historial.pop(); // Mantener tamaño razonable
+  if (eq.historial.length > 50) eq.historial.pop();
 }
 
 function renderHistorial(eq) {
@@ -961,7 +1048,7 @@ function renderHistorial(eq) {
 }
 
 /* ============================================================
-   KPIs DE FABRICACIÓN (CALCULADOS)
+   KPIs DE FABRICACIÓN
    ============================================================ */
 function renderKPIDetalle(eq) {
   const container = document.getElementById('kpi-detalle-content');
@@ -1081,7 +1168,7 @@ function editEquipo() {
   document.getElementById('eq-fecha-entrega').value = eq.fechaEntrega || '';
   document.getElementById('eq-operario').value = eq.operario || '';
   document.getElementById('eq-notas').value = eq.notas || '';
-  document.getElementById('div-select-plantilla').style.display = 'none'; // No sobreescribir procesos existentes
+  document.getElementById('div-select-plantilla').style.display = 'none';
   openModal('modal-nuevo-equipo');
 }
 
@@ -1126,7 +1213,6 @@ async function saveEquipo() {
   const editId = document.getElementById('equipo-edit-id').value;
 
   if (editId) {
-    // Editar equipo existente
     const eq = state.equipos.find(e => e.id === editId);
     if (!eq) return;
     eq.cliente = cliente;
@@ -1142,7 +1228,6 @@ async function saveEquipo() {
     showToast('Equipo actualizado en la nube ✓');
     await saveEquipoToCloud(eq);
   } else {
-    // Crear nuevo equipo
     const procRows = document.querySelectorAll('#modal-procesos-lista .modal-proceso-row');
     const procesos = [];
     procRows.forEach(row => {
@@ -1241,7 +1326,6 @@ function buildReporte(tipo) {
         lines.push(`-Sin tareas pendientes asignadas`);
       }
     } else {
-      // Fin de jornada
       const hoyStr = todayStr();
       const terminadosHoy = procesos.filter(p => p.estado === 'terminado' && (p.fechaFin === hoyStr || !p.fechaFin));
       const enProceso = procesos.filter(p => p.estado === 'en_proceso');

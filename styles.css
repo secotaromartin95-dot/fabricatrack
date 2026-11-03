@@ -1,5 +1,5 @@
 /* ======================================================
-   FabriTrack - Styles con Sincronización en Tiempo Real
+   FabriTrack - Styles con Autenticación Google y Firestore
    ====================================================== */
 
 :root {
@@ -44,6 +44,153 @@ html, body {
   font-size: 15px;
   line-height: 1.5;
   overflow-x: hidden;
+}
+
+/* ======================== PANTALLA LOGIN ======================== */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0d1642 0%, #1a237e 60%, #283593 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.login-card {
+  background: var(--white);
+  border-radius: 16px;
+  padding: 36px 28px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  text-align: center;
+}
+
+.login-logo {
+  font-size: 54px;
+  margin-bottom: 8px;
+}
+
+.login-card h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 6px;
+}
+
+.login-sub {
+  font-size: 13px;
+  color: var(--gray-600);
+  margin-bottom: 24px;
+}
+
+.login-instructions {
+  font-size: 13px;
+  color: var(--gray-700);
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: #f0f4f8;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary-light);
+}
+
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 28px;
+  border: 1px solid #dadce0;
+  background: var(--white);
+  color: #3c4043;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.btn-google:hover {
+  background: #f8f9fa;
+  border-color: #c2c4c8;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.btn-google:active {
+  background: #eee;
+  transform: scale(0.99);
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.unauthorized-box {
+  background: #fff5f5;
+  border: 1px solid #ffcdd2;
+  border-radius: var(--radius-sm);
+  padding: 18px;
+  margin-top: 10px;
+}
+.unauth-icon { font-size: 32px; margin-bottom: 6px; }
+.unauthorized-box h3 { color: var(--danger); font-size: 16px; margin-bottom: 6px; }
+.unauthorized-box p { font-size: 13px; color: #555; }
+.unauth-help { font-size: 11px !important; color: #888 !important; margin-top: 6px; }
+
+/* ======================== PERFIL EN SIDEBAR ======================== */
+.sidebar-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.user-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  object-fit: cover;
+  background: #3949ab;
+}
+.user-info { flex: 1; min-width: 0; }
+.user-name {
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-role {
+  font-size: 11px;
+  color: #ffca28;
+  font-weight: 600;
+  margin-top: 1px;
+}
+.btn-logout {
+  width: 100%;
+  background: rgba(255,255,255,0.1);
+  color: #ef5350;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-bottom: 8px;
+}
+.btn-logout:hover {
+  background: rgba(239,83,80,0.15);
 }
 
 /* ---- TOP NAV ---- */
@@ -1036,7 +1183,8 @@ html, body {
 @media (max-width: 480px) {
   .main-content { padding: 12px; }
   .view-header h1 { font-size: 18px; }
-  .sync-text { display: none; } /* Show only green/yellow dot on small mobile */
+  .sync-text { display: none; }
   .equipo-actions-top { flex-direction: column; }
   .form-row { flex-direction: column; gap: 0; }
+  .login-card { padding: 28px 20px; }
 }
