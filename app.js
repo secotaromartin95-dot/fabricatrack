@@ -87,8 +87,8 @@ function initAuthListener() {
       // Sin sesión
       state.currentUser = null;
       state.isAdmin = false;
-      loginScreen.style.display = 'flex';
-      appEl.style.display = 'none';
+      if (loginScreen) loginScreen.style.display = 'flex';
+      if (appEl) appEl.style.display = 'none';
       return;
     }
 
@@ -99,6 +99,8 @@ function initAuthListener() {
       // Usuario autenticado pero NO autorizado en la lista de administradores
       auth.signOut();
       showLoginError(`El correo "${email}" no tiene permisos de administrador.`);
+      if (loginScreen) loginScreen.style.display = 'flex';
+      if (appEl) appEl.style.display = 'none';
       return;
     }
 
@@ -117,8 +119,8 @@ function initAuthListener() {
     }
 
     // Mostrar la app
-    loginScreen.style.display = 'none';
-    appEl.style.display = 'block';
+    if (loginScreen) loginScreen.style.display = 'none';
+    if (appEl) appEl.style.display = 'block';
 
     showToast(`Sesión iniciada: ${email} 👑`);
 

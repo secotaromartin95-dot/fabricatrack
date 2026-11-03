@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v3
-const CACHE_NAME = 'fabricatrack-v3';
+// FabriTrack - Service Worker v4 (Estrategia Network-First para scripts y HTML)
+const CACHE_NAME = 'fabricatrack-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -11,10 +11,10 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
@@ -29,7 +29,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // No interceptar peticiones a Firebase, APIs de Google o Auth
+  // Dejar pasar peticiones a Google y Firebase directo
   if (
     url.origin.includes('firebase') ||
     url.origin.includes('googleapis') ||
@@ -39,16 +39,19 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Para navegación de páginas HTML, intentar red primero, respaldo caché
-  if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match('/') || caches.match('/index.html'))
-    );
-    return;
-  }
-
-  // Para assets estáticos: caché primero, respaldo red
+  // Network First: Intentar descargar la versión más reciente siempre que haya red
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200 && e.request.method === 'GET') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, responseToCache));
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Si no hay internet, usar la versión guardada en caché
+        return caches.match(e.request).then(cached => cached || caches.match('/'));
+      })
   );
 });
