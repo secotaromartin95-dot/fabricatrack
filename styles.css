@@ -1,5 +1,5 @@
 /* ======================================================
-   FabriTrack - Styles con Autenticación Google y Firestore
+   FabriTrack - Styles con Login Correo/Contraseña y Firestore
    ====================================================== */
 
 :root {
@@ -61,88 +61,78 @@ html, body {
 .login-card {
   background: var(--white);
   border-radius: 16px;
-  padding: 36px 28px;
+  padding: 32px 24px;
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   box-shadow: 0 10px 40px rgba(0,0,0,0.3);
   text-align: center;
 }
 
 .login-logo {
-  font-size: 54px;
-  margin-bottom: 8px;
+  font-size: 48px;
+  margin-bottom: 6px;
 }
 
 .login-card h1 {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .login-sub {
   font-size: 13px;
   color: var(--gray-600);
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
-.login-instructions {
-  font-size: 13px;
-  color: var(--gray-700);
-  margin-bottom: 20px;
-  padding: 10px 14px;
-  background: #f0f4f8;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--primary-light);
-}
-
-.btn-google {
+.password-input-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 18px;
-  border-radius: 28px;
-  border: 1px solid #dadce0;
-  background: var(--white);
-  color: #3c4043;
-  font-size: 15px;
-  font-weight: 600;
+}
+
+.password-input-wrap .form-input {
+  padding-right: 42px;
+}
+
+.btn-toggle-pass {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  transition: all 0.2s ease;
-  font-family: inherit;
+  font-size: 16px;
+  padding: 6px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
+.btn-toggle-pass:hover { opacity: 1; }
 
-.btn-google:hover {
-  background: #f8f9fa;
-  border-color: #c2c4c8;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
-
-.btn-google:active {
-  background: #eee;
-  transform: scale(0.99);
-}
-
-.google-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.unauthorized-box {
-  background: #fff5f5;
+.login-error {
+  background: #ffebee;
+  color: var(--danger);
   border: 1px solid #ffcdd2;
   border-radius: var(--radius-sm);
-  padding: 18px;
-  margin-top: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  text-align: left;
 }
-.unauth-icon { font-size: 32px; margin-bottom: 6px; }
-.unauthorized-box h3 { color: var(--danger); font-size: 16px; margin-bottom: 6px; }
-.unauthorized-box p { font-size: 13px; color: #555; }
-.unauth-help { font-size: 11px !important; color: #888 !important; margin-top: 6px; }
+
+.btn-login-submit {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.login-footer-note {
+  font-size: 11px;
+  color: var(--gray-500);
+  margin-top: 18px;
+}
 
 /* ======================== PERFIL EN SIDEBAR ======================== */
 .sidebar-user-card {
@@ -153,18 +143,24 @@ html, body {
   background: rgba(255,255,255,0.08);
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
-.user-avatar {
-  width: 42px;
-  height: 42px;
+.user-avatar-initial {
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  object-fit: cover;
-  background: #3949ab;
+  background: var(--accent);
+  color: var(--white);
+  font-size: 18px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.3);
 }
 .user-info { flex: 1; min-width: 0; }
 .user-name {
   color: var(--white);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -441,7 +437,7 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-/* ---- EQUIPO CARD (Dashboard & List) ---- */
+/* ---- EQUIPO CARD ---- */
 .equipos-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -1060,7 +1056,7 @@ html, body {
 }
 .form-textarea { resize: vertical; }
 
-/* ---- MODAL PROCESOS (en crear equipo) ---- */
+/* ---- MODAL PROCESOS ---- */
 .modal-procesos-lista { display: flex; flex-direction: column; gap: 8px; }
 .modal-proceso-row {
   display: flex;
@@ -1186,5 +1182,5 @@ html, body {
   .sync-text { display: none; }
   .equipo-actions-top { flex-direction: column; }
   .form-row { flex-direction: column; gap: 0; }
-  .login-card { padding: 28px 20px; }
+  .login-card { padding: 26px 18px; }
 }

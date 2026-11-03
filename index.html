@@ -18,34 +18,54 @@
 </head>
 <body>
 
-  <!-- ======================== PANTALLA DE LOGIN ======================== -->
+  <!-- ======================== PANTALLA DE LOGIN CON CORREO Y CONTRASEÑA ======================== -->
   <div id="login-screen" class="login-screen">
     <div class="login-card">
       <div class="login-logo">⚙️</div>
       <h1>FabriTrack</h1>
       <p class="login-sub">Sistema de Control de Fabricación en Tiempo Real</p>
       
-      <div id="login-box-default">
-        <p class="login-instructions">Acceso restringido para administradores autorizados.</p>
-        <button class="btn-google" onclick="loginWithGoogle()" id="btn-login-google">
-          <svg class="google-icon" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.665-5.17 3.665-9.12z"/>
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.27 21.41 7.34 24 12 24z"/>
-            <path fill="#FBBC05" d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.57H1.25C.45 8.16 0 9.98 0 12s.45 3.84 1.25 5.43l4.03-3.14z"/>
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.27 2.59 1.25 6.57l4.03 3.14c.95-2.83 3.6-4.96 6.72-4.96z"/>
-          </svg>
-          <span>Ingresar con Google</span>
-        </button>
-      </div>
+      <form id="form-login" onsubmit="handleEmailLogin(event)">
+        <div class="form-group" style="text-align:left;">
+          <label for="login-email">Correo electrónico</label>
+          <input 
+            type="email" 
+            id="login-email" 
+            class="form-input" 
+            placeholder="secotaro.martin95@gmail.com" 
+            required 
+            autocomplete="username"
+          />
+        </div>
 
-      <!-- Mensaje cuando ingresa un correo NO autorizado -->
-      <div id="login-box-unauthorized" style="display:none;" class="unauthorized-box">
-        <div class="unauth-icon">🚫</div>
-        <h3>Acceso no autorizado</h3>
-        <p id="unauth-email-msg"></p>
-        <p class="unauth-help">Solo las cuentas administradoras tienen acceso a este sistema.</p>
-        <button class="btn btn-outline btn-sm" onclick="logout()" style="margin-top:12px;">Probar con otra cuenta</button>
-      </div>
+        <div class="form-group" style="text-align:left;">
+          <label for="login-password">Contraseña</label>
+          <div class="password-input-wrap">
+            <input 
+              type="password" 
+              id="login-password" 
+              class="form-input" 
+              placeholder="••••••••" 
+              required 
+              autocomplete="current-password"
+            />
+            <button 
+              type="button" 
+              class="btn-toggle-pass" 
+              onclick="togglePasswordVisibility()" 
+              title="Mostrar/ocultar contraseña"
+            >👁️</button>
+          </div>
+        </div>
+
+        <div id="login-error-msg" class="login-error" style="display:none;"></div>
+
+        <button type="submit" class="btn btn-primary btn-login-submit" id="btn-submit-login">
+          Iniciar sesión
+        </button>
+      </form>
+
+      <p class="login-footer-note">Acceso exclusivo para administradores autorizados.</p>
     </div>
   </div>
 
@@ -77,10 +97,10 @@
 
       <!-- Perfil de usuario conectado -->
       <div class="sidebar-user-card" id="sidebar-user-card">
-        <img id="user-avatar" src="" alt="Avatar" class="user-avatar" />
+        <div class="user-avatar-initial" id="user-avatar-initial">A</div>
         <div class="user-info">
-          <div class="user-name" id="user-name">Usuario</div>
-          <div class="user-role">👑 Administrador</div>
+          <div class="user-name" id="user-name">Administrador</div>
+          <div class="user-role">👑 Acceso Total</div>
         </div>
       </div>
 

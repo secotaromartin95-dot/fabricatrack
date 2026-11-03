@@ -1,6 +1,6 @@
 // ============================================================
 //  FabriTrack - app.js
-//  Control de fabricación con Google Auth y Firestore en tiempo real
+//  Control de fabricación con Login Correo/Contraseña y Firestore en tiempo real
 // ============================================================
 
 /* ---- CONFIGURACIÓN DE FIREBASE ---- */
@@ -76,24 +76,19 @@ function updateSyncBadge(status, text) {
 }
 
 /* ============================================================
-   AUTENTICACIÓN CON GOOGLE Y RESTRICCIÓN DE ROLES
+   AUTENTICACIÓN CON CORREO Y CONTRASEÑA
    ============================================================ */
 function initAuthListener() {
   auth.onAuthStateChanged(user => {
     const loginScreen = document.getElementById('login-screen');
     const appEl = document.getElementById('app');
-    const boxDefault = document.getElementById('login-box-default');
-    const boxUnauth = document.getElementById('login-box-unauthorized');
-    const unauthMsg = document.getElementById('unauth-email-msg');
 
     if (!user) {
-      // No hay sesión iniciada
+      // Sin sesión
       state.currentUser = null;
       state.isAdmin = false;
       loginScreen.style.display = 'flex';
       appEl.style.display = 'none';
-      boxDefault.style.display = 'block';
-      boxUnauth.style.display = 'none';
       return;
     }
 
@@ -101,14 +96,9 @@ function initAuthListener() {
     const isAuthorized = ADMIN_EMAILS.includes(email);
 
     if (!isAuthorized) {
-      // Correo no autorizado
-      state.currentUser = user;
-      state.isAdmin = false;
-      loginScreen.style.display = 'flex';
-      appEl.style.display = 'none';
-      boxDefault.style.display = 'none';
-      boxUnauth.style.display = 'block';
-      unauthMsg.textContent = `La cuenta "${email}" no tiene permisos de administrador.`;
+      // Usuario autenticado pero NO autorizado en la lista de administradores
+      auth.signOut();
+      showLoginError(`El correo "${email}" no tiene permisos de administrador.`);
       return;
     }
 
@@ -117,22 +107,21 @@ function initAuthListener() {
     state.isAdmin = true;
 
     // Actualizar perfil en el menú lateral
-    const avatarEl = document.getElementById('user-avatar');
+    const initialEl = document.getElementById('user-avatar-initial');
     const nameEl = document.getElementById('user-name');
-    if (avatarEl) {
-      avatarEl.src = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email)}&background=1a237e&color=fff`;
+    if (initialEl) {
+      initialEl.textContent = email.charAt(0).toUpperCase();
     }
     if (nameEl) {
-      nameEl.textContent = user.displayName || email.split('@')[0];
+      nameEl.textContent = email.split('@')[0];
     }
 
-    // Mostrar aplicación
+    // Mostrar la app
     loginScreen.style.display = 'none';
     appEl.style.display = 'block';
 
-    showToast(`Bienvenido, ${user.displayName || email} 👑`);
+    showToast(`Sesión iniciada: ${email} 👑`);
 
-    // Iniciar sincronización en tiempo real (solo una vez)
     if (!state.syncInitialized) {
       state.syncInitialized = true;
       initRealtimeSync();
@@ -142,26 +131,104 @@ function initAuthListener() {
   });
 }
 
-async function loginWithGoogle() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  try {
-    showToast('Abriendo inicio de sesión con Google...');
-    await auth.signInWithPopup(provider);
-  } catch (error) {
-    console.error('Error al iniciar sesión con Google:', error);
-    if (error.code === 'auth/popup-blocked') {
-      // Si el navegador en el celular bloqueó la ventana emergente, usar redirección
-      auth.signInWithRedirect(provider);
-    } else {
-      showToast('⚠️ No se pudo iniciar sesión: ' + error.message);
-    }
+async function handleEmailLogin(event) {
+  event.preventDefault();
+
+  const emailInput = document.getElementById('login-email');
+  const passInput = document.getElementById('login-password');
+  const submitBtn = document.getElementById('btn-submit-login');
+  const errEl = document.getElementById('login-error-msg');
+
+  const email = emailInput.value.trim().toLowerCase();
+  const password = passInput.value;
+
+  errEl.style.display = 'none';
+
+  // 1. Validar si el correo está en la lista de administradores
+  if (!ADMIN_EMAILS.includes(email)) {
+    showLoginError('Acceso denegado: Este correo no está autorizado como administrador.');
+    return;
   }
+
+  // 2. Validar longitud mínima de contraseña
+  if (password.length < 6) {
+    showLoginError('La contraseña debe tener al menos 6 caracteres.');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Verificando...';
+
+  try {
+    // Intentar iniciar sesión
+    await auth.signInWithEmailAndPassword(email, password);
+  } catch (error) {
+    console.warn('Auth error code:', error.code, error.message);
+
+    // Si el usuario aún no existe en Firebase Authentication (primera vez que ingresa),
+    // lo registramos automáticamente con la contraseña que escribió.
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+      try {
+        await auth.createUserWithEmailAndPassword(email, password);
+        showToast('¡Cuenta configurada y activada con éxito! ✓');
+        return;
+      } catch (createErr) {
+        if (createErr.code === 'auth/email-already-in-use') {
+          showLoginError('Contraseña incorrecta. Por favor verificala.');
+        } else if (createErr.code === 'auth/operation-not-allowed') {
+          showLoginError('Debés habilitar "Correo electrónico/contraseña" en Firebase Console.');
+        } else {
+          showLoginError(getAuthErrorMessage(createErr));
+        }
+      }
+    } else {
+      showLoginError(getAuthErrorMessage(error));
+    }
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Iniciar sesión';
+  }
+}
+
+function showLoginError(msg) {
+  const errEl = document.getElementById('login-error-msg');
+  if (!errEl) return;
+  errEl.textContent = msg;
+  errEl.style.display = 'block';
+}
+
+function getAuthErrorMessage(error) {
+  switch (error.code) {
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Contraseña incorrecta. Revisala e intentá nuevamente.';
+    case 'auth/user-not-found':
+      return 'No se encontró un usuario con este correo.';
+    case 'auth/weak-password':
+      return 'La contraseña es muy débil. Usá al menos 6 caracteres.';
+    case 'auth/invalid-email':
+      return 'El formato de correo no es válido.';
+    case 'auth/operation-not-allowed':
+      return 'Habilitá "Correo electrónico/contraseña" en Firebase Console (pestaña Autenticación).';
+    case 'auth/too-many-requests':
+      return 'Demasiados intentos fallidos. Esperá unos minutos e intentá de nuevo.';
+    case 'auth/network-request-failed':
+      return 'Error de conexión. Verificá tu acceso a internet.';
+    default:
+      return error.message || 'Error al iniciar sesión.';
+  }
+}
+
+function togglePasswordVisibility() {
+  const passInput = document.getElementById('login-password');
+  if (!passInput) return;
+  passInput.type = (passInput.type === 'password') ? 'text' : 'password';
 }
 
 async function logout() {
   try {
     await auth.signOut();
-    showToast('Sesión cerrada');
+    showToast('Sesión cerrada correctamente');
   } catch (err) {
     console.error('Error al cerrar sesión:', err);
   }
@@ -192,7 +259,6 @@ function initRealtimeSync() {
       equipos.push({ id: doc.id, ...doc.data() });
     });
 
-    // Si Firestore está vacío, sembramos datos iniciales
     if (equipos.length === 0 && !state.initialLoaded) {
       state.initialLoaded = true;
       updateSyncBadge('syncing', 'Cargando datos iniciales...');
@@ -208,7 +274,6 @@ function initRealtimeSync() {
   }, err => {
     console.error('Error al conectar con Firestore:', err);
     updateSyncBadge('offline', 'Sin conexión');
-    // Respaldo de caché local
     const saved = localStorage.getItem('fabricatrack_cache');
     if (saved) {
       try {
@@ -678,13 +743,11 @@ function renderEquipoDetalle() {
 
   document.getElementById('nav-title-text').textContent = eq.cliente;
 
-  // Cabecera
   document.getElementById('detalle-titulo').innerHTML = `
     <h2>${esc(eq.cliente)}</h2>
     <p>${esc(eq.descripcion)}</p>
   `;
 
-  // Ficha de información
   const hoy = todayStr();
   const diasRestantes = eq.fechaEntrega ? diffDays(hoy, eq.fechaEntrega) : null;
   let diasClass = '';
