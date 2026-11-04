@@ -194,10 +194,14 @@
           <button class="btn-back" onclick="navigate('equipos')">← Volver</button>
           <div class="equipo-detalle-titulo" id="detalle-titulo"></div>
           <div class="equipo-actions-top">
+            <button class="btn btn-sm btn-success" id="btn-finalizar-equipo" onclick="toggleFinalizarEquipo()">🏁 Finalizar Equipo</button>
             <button class="btn btn-sm btn-outline" onclick="editEquipo()">✏️ Editar</button>
             <button class="btn btn-sm btn-primary" onclick="showReporteEquipoModal()">📋 Reporte</button>
           </div>
         </div>
+
+        <!-- Banner inteligente si todos los procesos están al 100% -->
+        <div id="banner-equipo-completo" class="banner-equipo-completo" style="display:none;"></div>
 
         <!-- Info equipo -->
         <div class="equipo-info-card" id="detalle-info-card"></div>
@@ -329,6 +333,14 @@
         <div class="form-group">
           <label>Operario / Responsable principal</label>
           <input type="text" id="eq-operario" placeholder="Ej: Cubillos, Ponce, Herrera, Mini..." class="form-input">
+        </div>
+        <div class="form-group" id="div-equipo-estado" style="display:none;">
+          <label>Estado del equipo</label>
+          <select id="eq-estado" class="form-input">
+            <option value="en_produccion">🔵 En producción (Activo en Dashboard)</option>
+            <option value="terminado">✅ Terminado (Pasa al historial de terminados)</option>
+            <option value="pausado">⏸️ Pausado</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Notas adicionales</label>

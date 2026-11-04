@@ -791,10 +791,67 @@ function renderEquipoDetalle() {
   document.getElementById('detalle-progreso-pct').textContent = prog + '%';
   document.getElementById('detalle-progreso-bar').style.width = prog + '%';
 
+  // Botón y Banner de Finalización de Fabricación
+  const btnFinalizar = document.getElementById('btn-finalizar-equipo');
+  const bannerCompleto = document.getElementById('banner-equipo-completo');
+
+  if (eq.estado === 'terminado') {
+    if (btnFinalizar) {
+      btnFinalizar.textContent = '🔄 Reabrir a Producción';
+      btnFinalizar.className = 'btn btn-sm btn-outline';
+    }
+    if (bannerCompleto) bannerCompleto.style.display = 'none';
+  } else {
+    if (btnFinalizar) {
+      btnFinalizar.textContent = '🏁 Finalizar Equipo';
+      btnFinalizar.className = 'btn btn-sm btn-success';
+    }
+    if (bannerCompleto) {
+      if (prog === 100) {
+        bannerCompleto.style.display = 'flex';
+        bannerCompleto.innerHTML = `
+          <div class="banner-equipo-completo-texto">
+            🎉 ¡Todos los subprocesos están terminados al 100%!
+          </div>
+          <button class="btn btn-sm btn-success" onclick="toggleFinalizarEquipo()">
+            ✅ Pasar a Lista de Terminados
+          </button>
+        `;
+      } else {
+        bannerCompleto.style.display = 'none';
+      }
+    }
+  }
+
   renderProcesos(eq);
   renderFotos(eq);
   renderHistorial(eq);
   renderKPIDetalle(eq);
+}
+
+async function toggleFinalizarEquipo() {
+  const eq = state.equipos.find(e => e.id === state.currentEquipoId);
+  if (!eq) return;
+
+  if (eq.estado !== 'terminado') {
+    const confirmacion = confirm(`¿Finalizar la fabricación de "${eq.cliente} - ${eq.descripcion}"?\n\nEl equipo saldrá del Dashboard activo y pasará a la lista de "Terminados".`);
+    if (!confirmacion) return;
+
+    eq.estado = 'terminado';
+    eq.fechaFinReal = todayStr();
+    addHistorial(eq, `Fabricación finalizada con éxito. Pasado a lista de Terminados.`, 'creacion');
+    showToast('¡Equipo finalizado! ✓ Pasó a la lista de Terminados');
+  } else {
+    const confirmacion = confirm(`¿Deseas reactivar este equipo y volverlo a poner "En producción"?`);
+    if (!confirmacion) return;
+
+    eq.estado = 'en_produccion';
+    addHistorial(eq, `Equipo reactivado y devuelto a producción.`, 'creacion');
+    showToast('Equipo devuelto a En producción ✓');
+  }
+
+  renderEquipoDetalle();
+  await saveEquipoToCloud(eq);
 }
 
 function switchTab(tabName, btn) {
@@ -1216,6 +1273,8 @@ function showNewEquipoModal() {
   document.getElementById('eq-operario').value = '';
   document.getElementById('eq-notas').value = '';
   document.getElementById('div-select-plantilla').style.display = 'block';
+  const divEstado = document.getElementById('div-equipo-estado');
+  if (divEstado) divEstado.style.display = 'none';
   document.getElementById('modal-procesos-lista').innerHTML = '';
   populatePlantillasSelect();
   openModal('modal-nuevo-equipo');
@@ -1234,6 +1293,10 @@ function editEquipo() {
   document.getElementById('eq-operario').value = eq.operario || '';
   document.getElementById('eq-notas').value = eq.notas || '';
   document.getElementById('div-select-plantilla').style.display = 'none';
+  const divEstado = document.getElementById('div-equipo-estado');
+  if (divEstado) divEstado.style.display = 'block';
+  const selEstado = document.getElementById('eq-estado');
+  if (selEstado) selEstado.value = eq.estado || 'en_produccion';
   openModal('modal-nuevo-equipo');
 }
 
@@ -1286,7 +1349,15 @@ async function saveEquipo() {
     eq.fechaEntrega = document.getElementById('eq-fecha-entrega').value || null;
     eq.operario = document.getElementById('eq-operario').value.trim();
     eq.notas = document.getElementById('eq-notas').value.trim();
-    addHistorial(eq, 'Ficha del equipo editada', 'info');
+
+    const nuevoEstado = document.getElementById('eq-estado')?.value;
+    if (nuevoEstado && nuevoEstado !== eq.estado) {
+      eq.estado = nuevoEstado;
+      if (nuevoEstado === 'terminado') eq.fechaFinReal = todayStr();
+      addHistorial(eq, `Estado del equipo actualizado a ${nuevoEstado}`, 'info');
+    } else {
+      addHistorial(eq, 'Ficha del equipo editada', 'info');
+    }
 
     closeModal('modal-nuevo-equipo');
     renderEquipoDetalle();
