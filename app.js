@@ -854,6 +854,30 @@ async function toggleFinalizarEquipo() {
   await saveEquipoToCloud(eq);
 }
 
+async function eliminarEquipoActual() {
+  const eq = state.equipos.find(e => e.id === state.currentEquipoId);
+  if (!eq) return;
+
+  const confirmacion = confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente el equipo "${eq.cliente} - ${eq.descripcion}"?\n\nEsta acción borrará el equipo y sus procesos de la base de datos.`);
+  if (!confirmacion) return;
+
+  const idParaEliminar = eq.id;
+  const clienteNombre = eq.cliente;
+  showToast('Eliminando equipo...');
+
+  const exito = await deleteEquipoFromCloud(idParaEliminar);
+  if (exito) {
+    state.currentEquipoId = null;
+    navigate('equipos');
+    showToast(`Equipo "${clienteNombre}" eliminado con éxito ✓`);
+  }
+}
+
+async function eliminarEquipoDesdeModal() {
+  closeModal('modal-nuevo-equipo');
+  await eliminarEquipoActual();
+}
+
 function switchTab(tabName, btn) {
   document.querySelectorAll('#view-equipo-detalle .tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('#view-equipo-detalle .tab-content').forEach(t => t.classList.remove('active'));
@@ -1275,6 +1299,8 @@ function showNewEquipoModal() {
   document.getElementById('div-select-plantilla').style.display = 'block';
   const divEstado = document.getElementById('div-equipo-estado');
   if (divEstado) divEstado.style.display = 'none';
+  const btnDel = document.getElementById('btn-modal-eliminar-equipo');
+  if (btnDel) btnDel.style.display = 'none';
   document.getElementById('modal-procesos-lista').innerHTML = '';
   populatePlantillasSelect();
   openModal('modal-nuevo-equipo');
@@ -1297,6 +1323,8 @@ function editEquipo() {
   if (divEstado) divEstado.style.display = 'block';
   const selEstado = document.getElementById('eq-estado');
   if (selEstado) selEstado.value = eq.estado || 'en_produccion';
+  const btnDel = document.getElementById('btn-modal-eliminar-equipo');
+  if (btnDel) btnDel.style.display = 'inline-flex';
   openModal('modal-nuevo-equipo');
 }
 

@@ -197,6 +197,7 @@
             <button class="btn btn-sm btn-success" id="btn-finalizar-equipo" onclick="toggleFinalizarEquipo()">🏁 Finalizar Equipo</button>
             <button class="btn btn-sm btn-outline" onclick="editEquipo()">✏️ Editar</button>
             <button class="btn btn-sm btn-primary" onclick="showReporteEquipoModal()">📋 Reporte</button>
+            <button class="btn btn-sm btn-danger" onclick="eliminarEquipoActual()" title="Eliminar equipo permanentemente">🗑️ Eliminar</button>
           </div>
         </div>
 
@@ -359,6 +360,7 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button type="button" class="btn btn-danger btn-sm" id="btn-modal-eliminar-equipo" style="display:none; margin-right:auto;" onclick="eliminarEquipoDesdeModal()">🗑️ Eliminar Equipo</button>
         <button class="btn btn-outline" onclick="closeModal('modal-nuevo-equipo')">Cancelar</button>
         <button class="btn btn-primary" onclick="saveEquipo()">Guardar en la nube</button>
       </div>
