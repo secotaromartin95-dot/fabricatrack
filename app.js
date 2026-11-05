@@ -263,9 +263,13 @@ function initRealtimeSync() {
 
     if (equipos.length === 0 && !state.initialLoaded) {
       state.initialLoaded = true;
-      updateSyncBadge('syncing', 'Cargando datos iniciales...');
-      await seedInitialDataToFirestore();
-      return;
+      const yaInicializado = localStorage.getItem('fabricatrack_seeded_v1');
+      if (!yaInicializado) {
+        localStorage.setItem('fabricatrack_seeded_v1', 'true');
+        updateSyncBadge('syncing', 'Cargando datos iniciales...');
+        await seedInitialDataToFirestore();
+        return;
+      }
     }
 
     state.initialLoaded = true;
@@ -360,6 +364,7 @@ async function deletePlantillaFromCloud(plantillaId) {
    DATOS INICIALES (BASADOS EN TUS PARTES DIARIOS)
    ============================================================ */
 async function seedInitialDataToFirestore() {
+  localStorage.setItem('fabricatrack_seeded_v1', 'true');
   const hoy = todayStr();
   const ayer = offsetDate(hoy, -1);
   const en5 = offsetDate(hoy, 5);
@@ -557,15 +562,94 @@ function calcProgreso(equipo) {
   return Math.round((terminados / equipo.procesos.length) * 100);
 }
 
+function calcDetalleTiempos(equipo) {
+  const hoy = todayStr();
+  const procesos = equipo.procesos || [];
+  const diasRestantesCalendario = equipo.fechaEntrega ? diffDays(hoy, equipo.fechaEntrega) : null;
+  
+  // Suma de duraciones estimadas de los procesos que faltan terminar
+  const diasTrabajoPendientes = procesos
+    .filter(p => p.estado !== 'terminado')
+    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
+  const diasTrabajoTotal = procesos.reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
+  const diasTrabajoTerminado = procesos
+    .filter(p => p.estado === 'terminado')
+    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
+  
+  const procesosConAtraso = procesos.filter(p => p.estado === 'con_atraso').map(p => p.nombre);
+
+  // 1. Diagnóstico Automático Calculado
+  let estadoCalculado = 'ok';
+  let motivo = 'Dentro de los plazos estimados';
+
+  if (procesosConAtraso.length > 0) {
+    estadoCalculado = 'atrasado';
+    motivo = `Atraso en: ${procesosConAtraso.slice(0, 2).join(', ')}`;
+  } else if (diasRestantesCalendario !== null) {
+    if (diasRestantesCalendario < 0) {
+      estadoCalculado = 'atrasado';
+      motivo = `Superó la fecha límite (${Math.abs(diasRestantesCalendario)}d de retraso)`;
+    } else if (diasTrabajoPendientes > diasRestantesCalendario) {
+      estadoCalculado = 'atrasado';
+      motivo = `Faltan ${diasTrabajoPendientes}d de procesos y solo quedan ${diasRestantesCalendario}d para entrega`;
+    } else if (diasTrabajoPendientes >= diasRestantesCalendario * 0.8 || diasRestantesCalendario <= 2) {
+      estadoCalculado = 'riesgo';
+      motivo = `Con lo justo: restan ${diasTrabajoPendientes}d de procesos vs ${diasRestantesCalendario}d de plazo`;
+    } else {
+      estadoCalculado = 'ok';
+      motivo = `Buen ritmo: ${diasTrabajoPendientes}d de trabajo en ${diasRestantesCalendario}d disponibles`;
+    }
+  } else {
+    // Si no tiene fecha de entrega
+    if (diasTrabajoPendientes > 0) {
+      motivo = `Restan ${diasTrabajoPendientes}d de procesos (sin fecha fijada)`;
+    } else {
+      motivo = 'Todos los procesos terminados';
+    }
+  }
+
+  // 2. Control Manual vs Automático
+  const ritmoConfigurado = equipo.ritmoTiempo || 'auto';
+  const esManual = ritmoConfigurado !== 'auto';
+  const estadoFinal = esManual ? ritmoConfigurado : estadoCalculado;
+
+  return {
+    diasRestantesCalendario,
+    diasTrabajoPendientes,
+    diasTrabajoTotal,
+    diasTrabajoTerminado,
+    procesosConAtraso,
+    estadoCalculado,
+    ritmoConfigurado,
+    esManual,
+    estadoFinal,
+    motivo
+  };
+}
+
 function calcEstadoEquipo(equipo) {
   if (equipo.estado === 'terminado') return 'terminado';
   if (equipo.estado === 'pausado') return 'pausado';
-  const hoy = todayStr();
-  const atrasados = (equipo.procesos || []).filter(p => p.estado === 'con_atraso').length;
-  if (atrasados > 0) return 'atrasado';
-  if (equipo.fechaEntrega && equipo.fechaEntrega <= hoy && equipo.estado !== 'terminado') return 'atrasado';
-  if (equipo.fechaEntrega && diffDays(hoy, equipo.fechaEntrega) <= 2) return 'riesgo';
-  return 'ok';
+  const detalle = calcDetalleTiempos(equipo);
+  return detalle.estadoFinal;
+}
+
+async function setRitmoTiempo(nuevoRitmo) {
+  const eq = state.equipos.find(e => e.id === state.currentEquipoId);
+  if (!eq) return;
+
+  eq.ritmoTiempo = nuevoRitmo;
+  const textoRitmo = {
+    auto: 'Cálculo automático',
+    ok: '🟢 A tiempo',
+    riesgo: '🟡 En riesgo',
+    atrasado: '🔴 Atrasado'
+  }[nuevoRitmo] || nuevoRitmo;
+
+  addHistorial(eq, `Ritmo de entrega fijado a: ${textoRitmo}`, 'info');
+  renderEquipoDetalle();
+  showToast(`Ritmo de tiempos: ${textoRitmo} ✓`);
+  await saveEquipoToCloud(eq);
 }
 
 function getEstadoBadge(estado) {
@@ -677,6 +761,14 @@ function renderEquipoCard(equipo) {
     else diasStr = `📅 Entrega en ${diasRestantes}d`;
   }
 
+  const detalleTiempos = calcDetalleTiempos(equipo);
+  let ritmoBadge = '';
+  if (equipo.estado !== 'terminado' && equipo.estado !== 'pausado') {
+    const ritmoIcon = { ok: '🟢 A tiempo', riesgo: '🟡 En riesgo', atrasado: '🔴 Atrasado' }[detalleTiempos.estadoFinal] || '🟢 A tiempo';
+    const tagModo = detalleTiempos.esManual ? ' · Manual' : '';
+    ritmoBadge = `<span class="ritmo-status-indicator ${detalleTiempos.estadoFinal}" style="font-size:11px;padding:2px 6px;">${ritmoIcon}${tagModo}</span>`;
+  }
+
   return `
   <div class="equipo-card estado-${estClass}" onclick="openEquipoDetalle('${equipo.id}')">
     <div class="equipo-card-header">
@@ -685,7 +777,13 @@ function renderEquipoCard(equipo) {
         <div class="equipo-card-nombre">${esc(equipo.descripcion)}</div>
         ${equipo.operario ? `<div class="equipo-card-operario">👷 ${esc(equipo.operario)}</div>` : ''}
       </div>
-      ${getEstadoBadge(equipo.estado)}
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          ${getEstadoBadge(equipo.estado)}
+          ${ritmoBadge}
+        </div>
+        <button class="btn-icon danger" style="padding:4px 8px;font-size:13px;border:1px solid var(--gray-200);border-radius:6px;background:var(--white);" onclick="event.stopPropagation(); eliminarEquipoDirecto('${equipo.id}', '${esc(equipo.cliente)}')" title="Eliminar este equipo">🗑️</button>
+      </div>
     </div>
     <div class="equipo-card-progress">
       <div class="progress-header">
@@ -698,6 +796,7 @@ function renderEquipoCard(equipo) {
     </div>
     ${atrasados.length > 0 ? `<div class="meta-item" style="color:var(--danger);font-weight:600">⚠️ Atraso: ${esc(atrasados.slice(0, 2).join(', '))}</div>` : ''}
     ${enProceso.length > 0 ? `<div class="meta-item" style="color:#e65100">🔄 ${esc(enProceso.slice(0, 2).join(', '))}${enProceso.length > 2 ? '...' : ''}</div>` : ''}
+    ${detalleTiempos.motivo && equipo.estado !== 'terminado' ? `<div class="meta-item" style="font-size:11px;color:var(--gray-600)">⏱️ ${esc(detalleTiempos.motivo)}</div>` : ''}
     <div class="equipo-card-meta">
       ${diasStr ? `<div class="meta-item">${diasStr}</div>` : ''}
       ${equipo.fechaInicio ? `<div class="meta-item">🗓️ Inicio: ${fmtDate(equipo.fechaInicio)}</div>` : ''}
@@ -761,6 +860,14 @@ function renderEquipoDetalle() {
     else { diasTexto = `${diasRestantes} días restantes`; }
   }
 
+  const detalleTiempos = calcDetalleTiempos(eq);
+  const ritmoIconos = {
+    ok: '🟢 A tiempo',
+    riesgo: '🟡 En riesgo',
+    atrasado: '🔴 Con atraso'
+  };
+  const ritmoTextoActual = ritmoIconos[detalleTiempos.estadoFinal] || '🟢 A tiempo';
+
   document.getElementById('detalle-info-card').innerHTML = `
     <div class="info-item">
       <span class="info-label">Cliente</span>
@@ -785,6 +892,36 @@ function renderEquipoDetalle() {
     </div>
     ${diasRestantes !== null ? `<div class="info-item"><span class="info-label">Plazo</span><span class="info-value ${diasClass}">${diasTexto}</span></div>` : ''}
     ${eq.notas ? `<div class="info-item" style="flex-basis:100%"><span class="info-label">Observaciones</span><span class="info-value">${esc(eq.notas)}</span></div>` : ''}
+    <div class="info-item ritmo-box" style="flex-basis:100%;margin-top:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span class="info-label" style="font-weight:700;color:var(--gray-700)">⏱️ CUMPLIMIENTO Y RITMO DE TIEMPOS</span>
+        <span class="ritmo-mode-badge ${detalleTiempos.esManual ? 'manual' : 'auto'}">
+          ${detalleTiempos.esManual ? 'AJUSTE MANUAL' : 'CÁLCULO AUTOMÁTICO'}
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+        <span class="ritmo-status-indicator ${detalleTiempos.estadoFinal}">${ritmoTextoActual}</span>
+        <span class="ritmo-motivo-text">${esc(detalleTiempos.motivo)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--gray-600);margin-bottom:8px;">
+        ${detalleTiempos.diasRestantesCalendario !== null ? `📅 Plazo: <b>${detalleTiempos.diasRestantesCalendario}d</b> restantes | ⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos` : `⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos (sin fecha fijada)`}
+      </div>
+      <div class="ritmo-selector">
+        <span style="font-size:11px;font-weight:700;color:var(--gray-600);align-self:center;">Cambiar ritmo:</span>
+        <button type="button" class="ritmo-pill ${detalleTiempos.ritmoConfigurado === 'auto' ? 'active-auto' : ''}" onclick="setRitmoTiempo('auto')" title="Calcula según días calendario y duración estimada de procesos pendientes">
+          🤖 Automático
+        </button>
+        <button type="button" class="ritmo-pill ${detalleTiempos.ritmoConfigurado === 'ok' ? 'active-ok' : ''}" onclick="setRitmoTiempo('ok')" title="Forzar estado: Vamos bien con los tiempos">
+          🟢 A tiempo
+        </button>
+        <button type="button" class="ritmo-pill ${detalleTiempos.ritmoConfigurado === 'riesgo' ? 'active-riesgo' : ''}" onclick="setRitmoTiempo('riesgo')" title="Forzar estado: Con lo justo / en riesgo">
+          🟡 En riesgo
+        </button>
+        <button type="button" class="ritmo-pill ${detalleTiempos.ritmoConfigurado === 'atrasado' ? 'active-atrasado' : ''}" onclick="setRitmoTiempo('atrasado')" title="Forzar estado: Presenta atraso">
+          🔴 Atrasado
+        </button>
+      </div>
+    </div>
   `;
 
   const prog = calcProgreso(eq);
@@ -876,6 +1013,18 @@ async function eliminarEquipoActual() {
 async function eliminarEquipoDesdeModal() {
   closeModal('modal-nuevo-equipo');
   await eliminarEquipoActual();
+}
+
+async function eliminarEquipoDirecto(id, cliente) {
+  const confirmacion = confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente el equipo "${cliente}"?\n\nEsta acción borrará el equipo y sus procesos de la base de datos.`);
+  if (!confirmacion) return;
+
+  showToast('Eliminando equipo...');
+  const exito = await deleteEquipoFromCloud(id);
+  if (exito) {
+    if (state.currentEquipoId === id) state.currentEquipoId = null;
+    showToast(`Equipo "${cliente}" eliminado ✓`);
+  }
 }
 
 function switchTab(tabName, btn) {
@@ -1301,6 +1450,8 @@ function showNewEquipoModal() {
   if (divEstado) divEstado.style.display = 'none';
   const btnDel = document.getElementById('btn-modal-eliminar-equipo');
   if (btnDel) btnDel.style.display = 'none';
+  const selRitmo = document.getElementById('eq-ritmo');
+  if (selRitmo) selRitmo.value = 'auto';
   document.getElementById('modal-procesos-lista').innerHTML = '';
   populatePlantillasSelect();
   openModal('modal-nuevo-equipo');
@@ -1323,6 +1474,8 @@ function editEquipo() {
   if (divEstado) divEstado.style.display = 'block';
   const selEstado = document.getElementById('eq-estado');
   if (selEstado) selEstado.value = eq.estado || 'en_produccion';
+  const selRitmo = document.getElementById('eq-ritmo');
+  if (selRitmo) selRitmo.value = eq.ritmoTiempo || 'auto';
   const btnDel = document.getElementById('btn-modal-eliminar-equipo');
   if (btnDel) btnDel.style.display = 'inline-flex';
   openModal('modal-nuevo-equipo');
@@ -1387,6 +1540,11 @@ async function saveEquipo() {
       addHistorial(eq, 'Ficha del equipo editada', 'info');
     }
 
+    const nuevoRitmo = document.getElementById('eq-ritmo')?.value || 'auto';
+    if (nuevoRitmo !== eq.ritmoTiempo) {
+      eq.ritmoTiempo = nuevoRitmo;
+    }
+
     closeModal('modal-nuevo-equipo');
     renderEquipoDetalle();
     showToast('Equipo actualizado en la nube ✓');
@@ -1420,6 +1578,7 @@ async function saveEquipo() {
       operario: document.getElementById('eq-operario').value.trim(),
       fechaInicio: document.getElementById('eq-fecha-inicio').value || todayStr(),
       fechaEntrega: document.getElementById('eq-fecha-entrega').value || null,
+      ritmoTiempo: document.getElementById('eq-ritmo')?.value || 'auto',
       notas: document.getElementById('eq-notas').value.trim(),
       estado: 'en_produccion',
       procesos,
@@ -1506,6 +1665,15 @@ function buildReporte(tipo) {
 
     const prog = calcProgreso(eq);
     lines.push(`Progreso: ${prog}%`);
+
+    const detalleTiempos = calcDetalleTiempos(eq);
+    const ritmoIcono = { ok: '🟢 A tiempo', riesgo: '🟡 En riesgo', atrasado: '🔴 Con atraso' }[detalleTiempos.estadoFinal] || '🟢 A tiempo';
+    const tagModo = detalleTiempos.esManual ? ' (manual)' : '';
+    lines.push(`Ritmo de entrega: ${ritmoIcono}${tagModo}`);
+    if (detalleTiempos.motivo) {
+      lines.push(`Situación: ${detalleTiempos.motivo}`);
+    }
+
     if (eq.fechaEntrega) {
       const dias = diffDays(todayStr(), eq.fechaEntrega);
       const aviso = dias < 0 ? `⚠️ (${Math.abs(dias)} días de atraso)` : `(${dias} días para entrega)`;

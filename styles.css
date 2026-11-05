@@ -605,7 +605,8 @@ html, body {
 .equipo-actions-top {
   display: flex;
   gap: 8px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .equipo-info-card {
@@ -640,6 +641,86 @@ html, body {
 .info-value.ok { color: var(--success); }
 .info-value.warning { color: var(--warning); }
 .info-value.danger { color: var(--danger); }
+
+/* ---- RITMO Y TIEMPOS ---- */
+.ritmo-box {
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px !important;
+  border: 1px solid var(--gray-200);
+}
+.ritmo-mode-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.5px;
+}
+.ritmo-mode-badge.auto { background: #e3f2fd; color: #1565c0; }
+.ritmo-mode-badge.manual { background: #ede7f6; color: #512da8; }
+
+.ritmo-status-indicator {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+}
+.ritmo-status-indicator.ok { background: #e8f5e9; color: var(--success); }
+.ritmo-status-indicator.riesgo { background: #fff3e0; color: var(--warning); }
+.ritmo-status-indicator.atrasado { background: #ffebee; color: var(--danger); }
+
+.ritmo-motivo-text {
+  font-size: 12px;
+  color: var(--gray-600);
+}
+
+.ritmo-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.ritmo-pill {
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--gray-700);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ritmo-pill:hover {
+  background: var(--gray-100);
+  border-color: var(--gray-400);
+}
+.ritmo-pill.active-auto {
+  background: #e8eaf6;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.ritmo-pill.active-ok {
+  background: #e8f5e9;
+  border-color: var(--success);
+  color: var(--success);
+  box-shadow: 0 0 0 1px var(--success);
+}
+.ritmo-pill.active-riesgo {
+  background: #fff3e0;
+  border-color: var(--warning);
+  color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning);
+}
+.ritmo-pill.active-atrasado {
+  background: #ffebee;
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
 
 .progress-section {
   background: var(--white);

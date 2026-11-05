@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v4 (Estrategia Network-First para scripts y HTML)
-const CACHE_NAME = 'fabricatrack-v4';
+// FabriTrack - Service Worker v5 (Diagnóstico de tiempos, ritmo manual y eliminación rápida)
+const CACHE_NAME = 'fabricatrack-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
