@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función que verifica si el usuario autenticado es administrador autorizado
+    function esAdmin() {
+      return request.auth != null && 
+             request.auth.token.email in [
+               'secotaro.martin95@gmail.com',
+               'jonathanadmin5@gmail.com'
+             ];
+    }
+
+    // Regla de acceso total para los administradores autorizados
+    match /{document=**} {
+      allow read, write: if esAdmin();
+    }
+  }
+}
