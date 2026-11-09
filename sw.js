@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v8 (Backup, trazabilidad con hora y papelera)
-const CACHE_NAME = 'fabricatrack-v8';
+// FabriTrack - Service Worker v9 (Rediseño visual de KPIs: balance de barras, donut SVG y stat cards)
+const CACHE_NAME = 'fabricatrack-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

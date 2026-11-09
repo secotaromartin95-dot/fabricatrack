@@ -1439,6 +1439,7 @@ function renderKPIDetalle(eq) {
 function buildKPIHTML(eq) {
   const hoy = todayStr();
   const procesos = eq.procesos || [];
+  const totalProc = procesos.length;
   const diasDiff = eq.fechaInicio ? diffDays(eq.fechaInicio, hoy) : null;
   const diasFabricacion = diasDiff !== null ? Math.max(1, diasDiff + 1) : '-';
   const prog = calcProgreso(eq);
@@ -1458,53 +1459,227 @@ function buildKPIHTML(eq) {
   };
   const ritmoBadge = ritmoTextos[ritmoClass] || '🟢 A tiempo';
 
+  // Brecha de días (Plazo laborable disponible - Trabajo pendiente)
+  const diasLabDisponibles = detalleTiempos.diasRestantesLaborables ?? 0;
+  const brechaDias = Math.round((diasLabDisponibles - detalleTiempos.diasTrabajoPendientes) * 10) / 10;
+  let brechaTexto = '-';
+  let brechaClass = '';
+  if (detalleTiempos.diasRestantesLaborables !== null) {
+    if (brechaDias < 0) {
+      brechaTexto = `${brechaDias}d`;
+      brechaClass = 'danger';
+    } else {
+      brechaTexto = `+${brechaDias}d`;
+      brechaClass = 'ok';
+    }
+  }
+
+  // Gráfico 1: Balance de Barras (proporciones)
+  const maxDias = Math.max(detalleTiempos.diasTrabajoPendientes, Math.max(0, diasLabDisponibles), 1);
+  const pctTrabajo = Math.min(100, Math.max(10, Math.round((detalleTiempos.diasTrabajoPendientes / maxDias) * 100)));
+  const pctPlazo = Math.min(100, Math.max(10, Math.round((Math.max(0, diasLabDisponibles) / maxDias) * 100)));
+
+  // Gráfico 2: Donut Chart SVG (Circunferencia C = 2 * PI * 38 ≈ 238.76)
+  const C = 238.76;
+  const circuloBase = `<circle cx="50" cy="50" r="38" stroke="#f1f5f9" stroke-width="12" fill="transparent"></circle>`;
+  let circulosSVG = circuloBase;
+
+  if (totalProc > 0) {
+    let offsetAcumulado = 0;
+    const segmentos = [
+      { len: (terminados / totalProc) * C, color: '#10b981' }, // verde
+      { len: (enProceso / totalProc) * C, color: '#f59e0b' },  // naranja
+      { len: (conAtraso / totalProc) * C, color: '#ef4444' },  // rojo
+      { len: (pendientes / totalProc) * C, color: '#cbd5e1' }  // gris
+    ];
+
+    circulosSVG += segmentos
+      .filter(s => s.len > 0)
+      .map(s => {
+        const tag = `<circle cx="50" cy="50" r="38" stroke="${s.color}" stroke-width="12" stroke-dasharray="${s.len.toFixed(1)} ${(C - s.len).toFixed(1)}" stroke-dashoffset="-${offsetAcumulado.toFixed(1)}" fill="transparent"></circle>`;
+        offsetAcumulado += s.len;
+        return tag;
+      })
+      .join('');
+  }
+
   const procesosConDuracion = procesos.filter(p => p.estado === 'terminado' && p.fechaInicio && p.fechaFin);
 
   return `
   <div class="kpi-card">
     <h3>📊 Resumen General — ${esc(eq.cliente)} (${esc(eq.descripcion)})</h3>
 
+    <!-- Alerta de ritmo -->
     <div class="kpi-alerta-box ${ritmoClass}">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <span style="font-weight:800;font-size:14px;">Ritmo de entrega: ${ritmoBadge} ${detalleTiempos.esManual ? '(Ajuste manual)' : ''}</span>
-        ${detalleTiempos.diasRestantesCalendario !== null ? `<span style="font-size:12px;font-weight:700;">${detalleTiempos.diasRestantesCalendario >= 0 ? `${detalleTiempos.diasRestantesCalendario}d de plazo restante` : `${Math.abs(detalleTiempos.diasRestantesCalendario)}d vencido`}</span>` : ''}
+        ${detalleTiempos.diasRestantesLaborables !== null ? `<span style="font-size:12px;font-weight:800;">${detalleTiempos.diasRestantesLaborables >= 0 ? `${detalleTiempos.diasRestantesLaborables}d laborables restantes` : `${Math.abs(detalleTiempos.diasRestantesLaborables)}d laborables vencido`}</span>` : ''}
       </div>
       <div style="font-size:12px;margin-top:4px;">
         ${esc(detalleTiempos.motivo)}
       </div>
     </div>
 
-    <div class="kpi-row"><span class="kpi-label">Días en fabricación (desde inicio)</span><span class="kpi-value">${diasFabricacion} ${diasFabricacion === 1 ? 'día' : 'días'}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Avance global</span><span class="kpi-value">${prog}%</span></div>
-    <div class="kpi-row"><span class="kpi-label">Procesos terminados (OK)</span><span class="kpi-value ok">${terminados}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Procesos en proceso</span><span class="kpi-value warning">${enProceso}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Procesos pendientes</span><span class="kpi-value">${pendientes}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Procesos con atraso reportado</span><span class="kpi-value danger">${conAtraso}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Duración total estimada en procesos</span><span class="kpi-value">${durTotal} días</span></div>
-    <div class="kpi-row"><span class="kpi-label">Días de procesos completados</span><span class="kpi-value ok">${durTerminada} días</span></div>
-    <div class="kpi-row"><span class="kpi-label">Trabajo pendiente por realizar</span><span class="kpi-value ${detalleTiempos.diasTrabajoPendientes > (detalleTiempos.diasRestantesLaborables ?? 999) ? 'danger' : ''}">${detalleTiempos.diasTrabajoPendientes} días</span></div>
-    ${eq.fechaEntrega ? `
-      <div class="kpi-row">
-        <span class="kpi-label">Días laborables disponibles (sin domingos)</span>
-        <span class="kpi-value ${detalleTiempos.diasRestantesLaborables < 0 || detalleTiempos.diasTrabajoPendientes > detalleTiempos.diasRestantesLaborables ? 'danger' : (detalleTiempos.diasRestantesLaborables <= 2 ? 'warning' : 'ok')}">${detalleTiempos.diasRestantesLaborables} días laborables (${detalleTiempos.diasRestantesCalendario}d corridos)</span>
-      </div>` : ''}
+    <!-- 4 Stats Cards -->
+    <div class="kpi-stats-grid">
+      <div class="kpi-stat-card">
+        <div class="kpi-stat-icon blue">🗓️</div>
+        <div class="kpi-stat-info">
+          <span class="kpi-stat-label">Días en taller</span>
+          <span class="kpi-stat-val">${diasFabricacion} <span style="font-size:12px;font-weight:600;color:var(--gray-500)">días</span></span>
+        </div>
+      </div>
+      <div class="kpi-stat-card">
+        <div class="kpi-stat-icon green">📊</div>
+        <div class="kpi-stat-info">
+          <span class="kpi-stat-label">Avance global</span>
+          <span class="kpi-stat-val ${prog === 100 ? 'ok' : ''}">${prog}%</span>
+        </div>
+      </div>
+      <div class="kpi-stat-card">
+        <div class="kpi-stat-icon amber">🔄</div>
+        <div class="kpi-stat-info">
+          <span class="kpi-stat-label">Activos hoy</span>
+          <span class="kpi-stat-val ${enProceso > 0 ? 'warning' : ''}">${enProceso} <span style="font-size:12px;font-weight:600;color:var(--gray-500)">en proc.</span></span>
+        </div>
+      </div>
+      <div class="kpi-stat-card">
+        <div class="kpi-stat-icon red">⚖️</div>
+        <div class="kpi-stat-info">
+          <span class="kpi-stat-label">Desfasaje</span>
+          <span class="kpi-stat-val ${brechaClass}">${brechaTexto}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráficos Split: Balance y Donut -->
+    <div class="kpi-graficos-split">
+      <!-- Balance de Tiempos -->
+      <div class="kpi-subcard">
+        <div>
+          <div class="kpi-subcard-title">
+            <span>⚖️ Balance de Tiempos</span>
+            <span style="font-size:11px;font-weight:800;color:${brechaDias < 0 ? 'var(--danger)' : 'var(--success)'};">${brechaDias < 0 ? `Déficit: ${Math.abs(brechaDias)}d` : `Margen: +${brechaDias}d`}</span>
+          </div>
+          <div class="kpi-subcard-subtitle">Trabajo pendiente vs. plazo de taller disponible</div>
+        </div>
+
+        <div>
+          <!-- Barra Trabajo -->
+          <div class="balance-bar-group">
+            <div class="balance-bar-header">
+              <span style="color:#dc2626;">🔴 Trabajo pendiente necesario</span>
+              <span style="color:#dc2626;font-weight:800;">${detalleTiempos.diasTrabajoPendientes} días</span>
+            </div>
+            <div class="balance-bar-track">
+              <div class="balance-bar-fill trabajo" style="width:${pctTrabajo}%;">
+                ${detalleTiempos.diasTrabajoPendientes}d
+              </div>
+            </div>
+          </div>
+
+          <!-- Barra Plazo -->
+          <div class="balance-bar-group">
+            <div class="balance-bar-header">
+              <span style="color:#2563eb;">🔵 Plazo laborable (sin domingos)</span>
+              <span style="color:#2563eb;font-weight:800;">${diasLabDisponibles} días</span>
+            </div>
+            <div class="balance-bar-track">
+              <div class="balance-bar-fill plazo" style="width:${pctPlazo}%;">
+                ${diasLabDisponibles}d
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;color:var(--gray-600);background:var(--gray-50);padding:8px 10px;border-radius:6px;border:1px solid var(--gray-200);margin-top:4px;">
+          💡 <b>Diagnóstico:</b> ${detalleTiempos.diasTrabajoPendientes > diasLabDisponibles ? `La carga de procesos supera en <b>${Math.abs(brechaDias)} días</b> el tiempo disponible de taller.` : `Tenés un changüí de <b>${brechaDias} días</b> para imprevistos.`}
+        </div>
+      </div>
+
+      <!-- Donut Chart -->
+      <div class="kpi-subcard">
+        <div>
+          <div class="kpi-subcard-title">
+            <span>🍩 Estados de Procesos</span>
+            <span style="font-size:11px;font-weight:700;color:var(--gray-500);">${terminados}/${totalProc} listos</span>
+          </div>
+          <div class="kpi-subcard-subtitle">Distribución de los ${totalProc} subprocesos</div>
+        </div>
+
+        <div class="donut-container">
+          <svg class="donut-svg" viewBox="0 0 100 100">
+            ${circulosSVG}
+          </svg>
+          <div class="donut-center-text">
+            <span class="donut-center-val">${prog}%</span>
+            <span class="donut-center-lbl">Avance</span>
+          </div>
+        </div>
+
+        <div class="donut-legend">
+          <div class="donut-legend-item"><span class="donut-legend-dot" style="background:#10b981"></span><span>Listos: <b>${terminados}</b></span></div>
+          <div class="donut-legend-item"><span class="donut-legend-dot" style="background:#f59e0b"></span><span>En proc: <b>${enProceso}</b></span></div>
+          <div class="donut-legend-item"><span class="donut-legend-dot" style="background:#cbd5e1"></span><span>En cola: <b>${pendientes}</b></span></div>
+          <div class="donut-legend-item"><span class="donut-legend-dot" style="background:#ef4444"></span><span>Atraso: <b>${conAtraso}</b></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla de Desglose Numérico Completa -->
+    <details style="margin-top:6px;background:var(--white);border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px;">
+      <summary style="font-size:12px;font-weight:700;color:var(--primary);cursor:pointer;user-select:none;">
+        📋 Ver tabla numérica detallada completa
+      </summary>
+      <div style="margin-top:8px;">
+        <div class="kpi-row"><span class="kpi-label">Días en fabricación (desde inicio)</span><span class="kpi-value">${diasFabricacion} ${diasFabricacion === 1 ? 'día' : 'días'}</span></div>
+        <div class="kpi-row"><span class="kpi-label">Avance global</span><span class="kpi-value">${prog}%</span></div>
+        <div class="kpi-row"><span class="kpi-label">Procesos terminados (OK)</span><span class="kpi-value ok">${terminados}</span></div>
+        <div class="kpi-row"><span class="kpi-label">Procesos en proceso</span><span class="kpi-value warning">${enProceso}</span></div>
+        <div class="kpi-row"><span class="kpi-label">Procesos pendientes</span><span class="kpi-value">${pendientes}</span></div>
+        <div class="kpi-row"><span class="kpi-label">Procesos con atraso reportado</span><span class="kpi-value danger">${conAtraso}</span></div>
+        <div class="kpi-row"><span class="kpi-label">Duración total estimada en procesos</span><span class="kpi-value">${durTotal} días</span></div>
+        <div class="kpi-row"><span class="kpi-label">Días de procesos completados</span><span class="kpi-value ok">${durTerminada} días</span></div>
+        <div class="kpi-row"><span class="kpi-label">Trabajo pendiente por realizar</span><span class="kpi-value ${detalleTiempos.diasTrabajoPendientes > diasLabDisponibles ? 'danger' : ''}">${detalleTiempos.diasTrabajoPendientes} días</span></div>
+        ${eq.fechaEntrega ? `
+          <div class="kpi-row">
+            <span class="kpi-label">Días laborables disponibles (sin domingos)</span>
+            <span class="kpi-value ${diasLabDisponibles < 0 || detalleTiempos.diasTrabajoPendientes > diasLabDisponibles ? 'danger' : (diasLabDisponibles <= 2 ? 'warning' : 'ok')}">${diasLabDisponibles} días laborables (${detalleTiempos.diasRestantesCalendario}d corridos)</span>
+          </div>` : ''}
+      </div>
+    </details>
   </div>
 
+  <!-- Subprocesos y Tiempos Estimados -->
   <div class="kpi-card">
-    <h3>⏱ Estado y Duración por Subproceso</h3>
-    <div class="kpi-proceso-bar">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid var(--gray-200);padding-bottom:8px;">
+      <h3 style="margin-bottom:0;border-bottom:none;padding-bottom:0;">⏱ Estado y Duración por Subproceso</h3>
+      <span style="font-size:12px;font-weight:700;color:var(--gray-600)">${totalProc} procesos · ${durTotal}d est.</span>
+    </div>
+
+    <div>
       ${procesos.map(p => {
         const durReal = (p.fechaInicio && p.fechaFin) ? Math.max(1, diffDiasLaborables(p.fechaInicio, p.fechaFin)) : null;
         const durEst = parseFloat(p.duracion) || 0;
-        const durParaBarra = durReal !== null ? durReal : (durEst || 1);
-        const barra = Math.min(100, (durParaBarra / (durTotal || 1)) * 100);
+        const textoEstado = {
+          terminado: '✅ Completado',
+          en_proceso: '🔄 En proceso en taller',
+          pendiente: '⬜ En espera',
+          con_atraso: '⚠️ Con atraso'
+        }[p.estado] || p.estado;
+
         return `
-        <div class="kpi-proceso-row">
-          <span class="kpi-proceso-nombre" title="${esc(p.nombre)}">${esc(p.nombre)}</span>
-          <div class="kpi-proceso-barra">
-            <div class="kpi-proceso-fill fill-${p.estado}" style="width:${barra || 20}%"></div>
+        <div class="kpi-proc-item ${p.estado}">
+          <div class="kpi-proc-left">
+            <div class="kpi-proc-icon-wrap">${getProcesoIcon(p.estado)}</div>
+            <div style="min-width:0">
+              <div class="kpi-proc-title" title="${esc(p.nombre)}">${esc(p.nombre)}</div>
+              <div class="kpi-proc-sub">${textoEstado}${p.responsable ? ` · 👷 ${esc(p.responsable)}` : ''}</div>
+            </div>
           </div>
-          <span class="kpi-proceso-dias">${getProcesoIcon(p.estado)} ${durReal !== null ? durReal + 'd' : (durEst ? durEst + 'd' : '-')}</span>
+          <div class="kpi-proc-badge">
+            ${durReal !== null ? `${durReal}d real` : (durEst ? `${durEst}d est.` : '-')}
+          </div>
         </div>`;
       }).join('')}
     </div>
