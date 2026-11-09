@@ -591,7 +591,7 @@ function calcDetalleTiempos(equipo) {
       motivo = `Superó la fecha límite (${Math.abs(diasRestantesCalendario)}d de retraso)`;
     } else if (diasTrabajoPendientes > diasRestantesCalendario) {
       estadoCalculado = 'atrasado';
-      motivo = `Faltan ${diasTrabajoPendientes}d de procesos y solo quedan ${diasRestantesCalendario}d para entrega`;
+      motivo = `Atrasado: faltan ${diasTrabajoPendientes}d de trabajo en procesos y solo quedan ${diasRestantesCalendario}d de plazo para entrega`;
     } else if (diasTrabajoPendientes >= diasRestantesCalendario * 0.8 || diasRestantesCalendario <= 2) {
       estadoCalculado = 'riesgo';
       motivo = `Con lo justo: restan ${diasTrabajoPendientes}d de procesos vs ${diasRestantesCalendario}d de plazo`;
@@ -1353,32 +1353,54 @@ function renderKPIDetalle(eq) {
 function buildKPIHTML(eq) {
   const hoy = todayStr();
   const procesos = eq.procesos || [];
-  const diasFabricacion = eq.fechaInicio ? Math.max(0, diffDays(eq.fechaInicio, hoy)) : '-';
+  const diasDiff = eq.fechaInicio ? diffDays(eq.fechaInicio, hoy) : null;
+  const diasFabricacion = diasDiff !== null ? Math.max(1, diasDiff + 1) : '-';
   const prog = calcProgreso(eq);
   const terminados = procesos.filter(p => p.estado === 'terminado').length;
   const enProceso = procesos.filter(p => p.estado === 'en_proceso').length;
   const pendientes = procesos.filter(p => p.estado === 'pendiente').length;
   const conAtraso = procesos.filter(p => p.estado === 'con_atraso').length;
-  const durTotal = procesos.reduce((s, p) => s + (p.duracion || 0), 0);
-  const durTerminada = procesos.filter(p => p.estado === 'terminado').reduce((s, p) => s + (p.duracion || 0), 0);
+  const durTotal = Math.round(procesos.reduce((s, p) => s + (parseFloat(p.duracion) || 0), 0) * 10) / 10;
+  const durTerminada = Math.round(procesos.filter(p => p.estado === 'terminado').reduce((s, p) => s + (parseFloat(p.duracion) || 0), 0) * 10) / 10;
+
+  const detalleTiempos = calcDetalleTiempos(eq);
+  const ritmoClass = detalleTiempos.estadoFinal;
+  const ritmoTextos = {
+    ok: '🟢 A tiempo',
+    riesgo: '🟡 En riesgo',
+    atrasado: '🔴 Con atraso'
+  };
+  const ritmoBadge = ritmoTextos[ritmoClass] || '🟢 A tiempo';
 
   const procesosConDuracion = procesos.filter(p => p.estado === 'terminado' && p.fechaInicio && p.fechaFin);
 
   return `
   <div class="kpi-card">
     <h3>📊 Resumen General — ${esc(eq.cliente)} (${esc(eq.descripcion)})</h3>
-    <div class="kpi-row"><span class="kpi-label">Días transcurridos desde inicio</span><span class="kpi-value">${diasFabricacion} días</span></div>
+
+    <div class="kpi-alerta-box ${ritmoClass}">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:800;font-size:14px;">Ritmo de entrega: ${ritmoBadge} ${detalleTiempos.esManual ? '(Ajuste manual)' : ''}</span>
+        ${detalleTiempos.diasRestantesCalendario !== null ? `<span style="font-size:12px;font-weight:700;">${detalleTiempos.diasRestantesCalendario >= 0 ? `${detalleTiempos.diasRestantesCalendario}d de plazo restante` : `${Math.abs(detalleTiempos.diasRestantesCalendario)}d vencido`}</span>` : ''}
+      </div>
+      <div style="font-size:12px;margin-top:4px;">
+        ${esc(detalleTiempos.motivo)}
+      </div>
+    </div>
+
+    <div class="kpi-row"><span class="kpi-label">Días en fabricación (desde inicio)</span><span class="kpi-value">${diasFabricacion} ${diasFabricacion === 1 ? 'día' : 'días'}</span></div>
     <div class="kpi-row"><span class="kpi-label">Avance global</span><span class="kpi-value">${prog}%</span></div>
     <div class="kpi-row"><span class="kpi-label">Procesos terminados (OK)</span><span class="kpi-value ok">${terminados}</span></div>
     <div class="kpi-row"><span class="kpi-label">Procesos en proceso</span><span class="kpi-value warning">${enProceso}</span></div>
     <div class="kpi-row"><span class="kpi-label">Procesos pendientes</span><span class="kpi-value">${pendientes}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Procesos con atraso</span><span class="kpi-value danger">${conAtraso}</span></div>
-    <div class="kpi-row"><span class="kpi-label">Suma de duraciones estimadas</span><span class="kpi-value">${durTotal} días</span></div>
-    <div class="kpi-row"><span class="kpi-label">Días completados</span><span class="kpi-value ok">${durTerminada} días</span></div>
+    <div class="kpi-row"><span class="kpi-label">Procesos con atraso reportado</span><span class="kpi-value danger">${conAtraso}</span></div>
+    <div class="kpi-row"><span class="kpi-label">Duración total estimada en procesos</span><span class="kpi-value">${durTotal} días</span></div>
+    <div class="kpi-row"><span class="kpi-label">Días de procesos completados</span><span class="kpi-value ok">${durTerminada} días</span></div>
+    <div class="kpi-row"><span class="kpi-label">Trabajo pendiente por realizar</span><span class="kpi-value ${detalleTiempos.diasTrabajoPendientes > (detalleTiempos.diasRestantesCalendario || 999) ? 'danger' : ''}">${detalleTiempos.diasTrabajoPendientes} días</span></div>
     ${eq.fechaEntrega ? `
       <div class="kpi-row">
-        <span class="kpi-label">Plazo restante</span>
-        <span class="kpi-value ${diffDays(hoy, eq.fechaEntrega) < 0 ? 'danger' : ''}">${diffDays(hoy, eq.fechaEntrega)} días</span>
+        <span class="kpi-label">Plazo calendario restante hasta entrega</span>
+        <span class="kpi-value ${detalleTiempos.diasRestantesCalendario < 0 || detalleTiempos.diasTrabajoPendientes > detalleTiempos.diasRestantesCalendario ? 'danger' : (detalleTiempos.diasRestantesCalendario <= 2 ? 'warning' : 'ok')}">${detalleTiempos.diasRestantesCalendario} días</span>
       </div>` : ''}
   </div>
 
@@ -1386,15 +1408,17 @@ function buildKPIHTML(eq) {
     <h3>⏱ Estado y Duración por Subproceso</h3>
     <div class="kpi-proceso-bar">
       ${procesos.map(p => {
-        const durReal = (p.fechaInicio && p.fechaFin) ? diffDays(p.fechaInicio, p.fechaFin) : null;
-        const barra = Math.min(100, (p.duracion / (durTotal || 1)) * 100);
+        const durReal = (p.fechaInicio && p.fechaFin) ? Math.max(1, diffDays(p.fechaInicio, p.fechaFin)) : null;
+        const durEst = parseFloat(p.duracion) || 0;
+        const durParaBarra = durReal !== null ? durReal : (durEst || 1);
+        const barra = Math.min(100, (durParaBarra / (durTotal || 1)) * 100);
         return `
         <div class="kpi-proceso-row">
           <span class="kpi-proceso-nombre" title="${esc(p.nombre)}">${esc(p.nombre)}</span>
           <div class="kpi-proceso-barra">
             <div class="kpi-proceso-fill fill-${p.estado}" style="width:${barra || 20}%"></div>
           </div>
-          <span class="kpi-proceso-dias">${getProcesoIcon(p.estado)} ${durReal !== null ? durReal + 'd' : (p.duracion ? p.duracion + 'd' : '-')}</span>
+          <span class="kpi-proceso-dias">${getProcesoIcon(p.estado)} ${durReal !== null ? durReal + 'd' : (durEst ? durEst + 'd' : '-')}</span>
         </div>`;
       }).join('')}
     </div>
@@ -1404,13 +1428,13 @@ function buildKPIHTML(eq) {
   <div class="kpi-card">
     <h3>📅 Tiempos Reales vs Estimados</h3>
     ${procesosConDuracion.map(p => {
-      const real = diffDays(p.fechaInicio, p.fechaFin);
-      const est = p.duracion || 0;
+      const real = Math.max(1, diffDays(p.fechaInicio, p.fechaFin));
+      const est = parseFloat(p.duracion) || 0;
       const diff = real - est;
       const cls = diff > 0 ? 'danger' : (diff < 0 ? 'ok' : '');
       return `<div class="kpi-row">
         <span class="kpi-label">${esc(p.nombre)}</span>
-        <span class="kpi-value ${cls}">Real: ${real}d / Est: ${est}d ${diff > 0 ? `(+${diff}d atraso)` : diff < 0 ? `(${diff}d antes)` : '✓ A tiempo'}</span>
+        <span class="kpi-value ${cls}">Real: ${real}d / Est: ${est}d ${diff > 0 ? `(+${diff}d atraso)` : diff < 0 ? `(${Math.abs(diff)}d antes)` : '✓ A tiempo'}</span>
       </div>`;
     }).join('')}
   </div>` : ''}

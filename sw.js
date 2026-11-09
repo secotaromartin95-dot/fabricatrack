@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v5 (Diagnóstico de tiempos, ritmo manual y eliminación rápida)
-const CACHE_NAME = 'fabricatrack-v5';
+// FabriTrack - Service Worker v6 (Corrección KPI tareas mismo día y alertas de plazos)
+const CACHE_NAME = 'fabricatrack-v6';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
