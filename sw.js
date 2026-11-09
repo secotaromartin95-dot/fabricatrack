@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v7 (Cálculo sin domingos y días laborables reales)
-const CACHE_NAME = 'fabricatrack-v7';
+// FabriTrack - Service Worker v8 (Backup, trazabilidad con hora y papelera)
+const CACHE_NAME = 'fabricatrack-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

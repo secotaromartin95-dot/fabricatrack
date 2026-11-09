@@ -120,6 +120,9 @@
         <a href="#" class="sidebar-link" onclick="navigate('plantillas'); toggleSidebar()">
           <span class="sidebar-icon">📝</span> Plantillas
         </a>
+        <a href="#" class="sidebar-link" onclick="navigate('backup'); toggleSidebar()">
+          <span class="sidebar-icon">💾</span> Copia de Seguridad
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -183,6 +186,7 @@
             <option value="en_produccion">En producción</option>
             <option value="terminado">Terminados</option>
             <option value="pausado">Pausados</option>
+            <option value="eliminado">🗑️ Papelera (recuperables)</option>
           </select>
         </div>
         <div class="equipos-list" id="equipos-list"></div>
@@ -297,6 +301,51 @@
         </div>
         <p class="help-text">Creá plantillas reutilizables según el tipo de equipo (ej: Tanque 5000Lts, Semirremolque 16500Lts, Tolva, Batea).</p>
         <div id="plantillas-list" class="plantillas-list"></div>
+      </section>
+
+      <!-- ======================== COPIA DE SEGURIDAD ======================== -->
+      <section id="view-backup" class="view">
+        <div class="view-header">
+          <h1>Copia de Seguridad y Trazabilidad</h1>
+        </div>
+        <p class="help-text">Respaldá la información completa de tu taller para no perder nunca la trazabilidad de los trabajos.</p>
+        
+        <div class="kpi-content">
+          <div class="kpi-card">
+            <h3>📥 Exportar y Descargar Respaldo</h3>
+            <p style="font-size:13px;color:var(--gray-600);margin-bottom:14px;">
+              Descargá una copia íntegra con todos los equipos, fechas, subprocesos, fotos e historial de actividad en un archivo a tu computadora.
+            </p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="descargarBackupJSON()">
+                💾 Descargar Copia Completa (JSON)
+              </button>
+              <button class="btn btn-outline" onclick="descargarEquiposExcel()">
+                📊 Exportar Equipos a Planilla (CSV / Excel)
+              </button>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <h3>🛡️ Estado de Infraestructura y Respaldo</h3>
+            <div class="kpi-row"><span class="kpi-label">Servidor y Base de Datos</span><span class="kpi-value ok">Google Cloud Firestore (San Pablo)</span></div>
+            <div class="kpi-row"><span class="kpi-label">Replicación Física</span><span class="kpi-value ok">Multi-zona de Google (Tolerancia a fallas)</span></div>
+            <div class="kpi-row"><span class="kpi-label">Persistencia Local (Sin Internet)</span><span class="kpi-value ok">Activada (IndexedDB en navegador)</span></div>
+            <div class="kpi-row"><span class="kpi-label">Equipos en Base de Datos</span><span class="kpi-value" id="backup-total-equipos">0</span></div>
+            <div class="kpi-row"><span class="kpi-label">Plantillas configuradas</span><span class="kpi-value" id="backup-total-plantillas">0</span></div>
+          </div>
+
+          <div class="kpi-card">
+            <h3>📤 Restaurar Respaldo</h3>
+            <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">
+              Si necesitás restaurar datos desde un archivo JSON descargado previamente:
+            </p>
+            <label class="btn btn-outline btn-sm" style="display:inline-flex;align-items:center;cursor:pointer;">
+              📁 Seleccionar archivo JSON para restaurar
+              <input type="file" id="input-restore-backup" accept=".json" style="display:none" onchange="restaurarBackupJSON(event)">
+            </label>
+          </div>
+        </div>
       </section>
 
     </main>

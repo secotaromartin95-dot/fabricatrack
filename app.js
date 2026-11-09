@@ -724,6 +724,9 @@ function navigate(view) {
   } else if (view === 'plantillas') {
     document.getElementById('nav-title-text').textContent = 'Plantillas';
     renderPlantillas();
+  } else if (view === 'backup') {
+    document.getElementById('nav-title-text').textContent = 'Copia de Seguridad';
+    renderBackupView();
   }
 
   window.scrollTo(0, 0);
@@ -746,7 +749,7 @@ function closeModal(id) {
    DASHBOARD
    ============================================================ */
 function renderDashboard() {
-  const activos = state.equipos.filter(e => e.estado === 'en_produccion');
+  const activos = state.equipos.filter(e => e.estado === 'en_produccion' && !e.eliminado);
   const estadosList = activos.map(e => calcEstadoEquipo(e));
 
   document.getElementById('stat-total').textContent = activos.length;
@@ -773,7 +776,6 @@ function renderEquipoCard(equipo) {
   const procesos = equipo.procesos || [];
   const enProceso = procesos.filter(p => p.estado === 'en_proceso').map(p => p.nombre);
   const atrasados = procesos.filter(p => p.estado === 'con_atraso').map(p => p.nombre);
-  const diasRestantes = equipo.fechaEntrega ? diffDays(todayStr(), equipo.fechaEntrega) : null;
 
   const detalleTiempos = calcDetalleTiempos(equipo);
   let diasStr = '';
@@ -784,7 +786,7 @@ function renderEquipoCard(equipo) {
   }
 
   let ritmoBadge = '';
-  if (equipo.estado !== 'terminado' && equipo.estado !== 'pausado') {
+  if (equipo.estado !== 'terminado' && equipo.estado !== 'pausado' && !equipo.eliminado) {
     const ritmoIcon = { ok: '🟢 A tiempo', riesgo: '🟡 En riesgo', atrasado: '🔴 Atrasado' }[detalleTiempos.estadoFinal] || '🟢 A tiempo';
     const tagModo = detalleTiempos.esManual ? ' · Manual' : '';
     ritmoBadge = `<span class="ritmo-status-indicator ${detalleTiempos.estadoFinal}" style="font-size:11px;padding:2px 6px;">${ritmoIcon}${tagModo}</span>`;
@@ -803,7 +805,12 @@ function renderEquipoCard(equipo) {
           ${getEstadoBadge(equipo.estado)}
           ${ritmoBadge}
         </div>
-        <button class="btn-icon danger" style="padding:4px 8px;font-size:13px;border:1px solid var(--gray-200);border-radius:6px;background:var(--white);" onclick="event.stopPropagation(); eliminarEquipoDirecto('${equipo.id}', '${esc(equipo.cliente)}')" title="Eliminar este equipo">🗑️</button>
+        ${equipo.eliminado ? `
+          <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:12px;background:var(--white);" onclick="event.stopPropagation(); restaurarEquipo('${equipo.id}')" title="Restaurar a la lista activa">🔄 Restaurar</button>
+          <button class="btn-icon danger" style="padding:4px 8px;font-size:13px;border:1px solid var(--gray-200);border-radius:6px;background:var(--white);" onclick="event.stopPropagation(); eliminarEquipoDirecto('${equipo.id}', '${esc(equipo.cliente)}')" title="Borrar definitivamente">❌</button>
+        ` : `
+          <button class="btn-icon danger" style="padding:4px 8px;font-size:13px;border:1px solid var(--gray-200);border-radius:6px;background:var(--white);" onclick="event.stopPropagation(); eliminarEquipoDirecto('${equipo.id}', '${esc(equipo.cliente)}')" title="Enviar a la papelera">🗑️</button>
+        `}
       </div>
     </div>
     <div class="equipo-card-progress">
@@ -817,7 +824,7 @@ function renderEquipoCard(equipo) {
     </div>
     ${atrasados.length > 0 ? `<div class="meta-item" style="color:var(--danger);font-weight:600">⚠️ Atraso: ${esc(atrasados.slice(0, 2).join(', '))}</div>` : ''}
     ${enProceso.length > 0 ? `<div class="meta-item" style="color:#e65100">🔄 ${esc(enProceso.slice(0, 2).join(', '))}${enProceso.length > 2 ? '...' : ''}</div>` : ''}
-    ${detalleTiempos.motivo && equipo.estado !== 'terminado' ? `<div class="meta-item" style="font-size:11px;color:var(--gray-600)">⏱️ ${esc(detalleTiempos.motivo)}</div>` : ''}
+    ${detalleTiempos.motivo && equipo.estado !== 'terminado' && !equipo.eliminado ? `<div class="meta-item" style="font-size:11px;color:var(--gray-600)">⏱️ ${esc(detalleTiempos.motivo)}</div>` : ''}
     <div class="equipo-card-meta">
       ${diasStr ? `<div class="meta-item">${diasStr}</div>` : ''}
       ${equipo.fechaInicio ? `<div class="meta-item">🗓️ Inicio: ${fmtDate(equipo.fechaInicio)}</div>` : ''}
@@ -838,6 +845,11 @@ function filterEquipos() {
   const est = document.getElementById('equipo-filter-estado')?.value || '';
 
   let lista = state.equipos.filter(e => {
+    if (est === 'eliminado') {
+      return e.eliminado === true && (!q || e.cliente.toLowerCase().includes(q) || e.descripcion.toLowerCase().includes(q));
+    }
+    if (e.eliminado) return false;
+
     const matchQ = !q || e.cliente.toLowerCase().includes(q) || e.descripcion.toLowerCase().includes(q) || (e.operario || '').toLowerCase().includes(q);
     const matchEst = !est || e.estado === est;
     return matchQ && matchEst;
@@ -845,7 +857,8 @@ function filterEquipos() {
 
   const container = document.getElementById('equipos-list');
   if (lista.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>No se encontraron equipos con ese filtro.</p></div>`;
+    const msgVacio = est === 'eliminado' ? 'La papelera de reciclaje está vacía.' : 'No se encontraron equipos con ese filtro.';
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>${msgVacio}</p></div>`;
     return;
   }
   container.innerHTML = lista.map(e => renderEquipoCard(e)).join('');
@@ -1022,19 +1035,29 @@ async function eliminarEquipoActual() {
   const eq = state.equipos.find(e => e.id === state.currentEquipoId);
   if (!eq) return;
 
-  const confirmacion = confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente el equipo "${eq.cliente} - ${eq.descripcion}"?\n\nEsta acción borrará el equipo y sus procesos de la base de datos.`);
+  if (eq.eliminado) {
+    const confDef = confirm(`¿ELIMINAR DEFINITIVAMENTE el equipo "${eq.cliente} - ${eq.descripcion}"?\n\nEsta acción borrará el equipo y sus procesos de forma permanente e irreversible.`);
+    if (!confDef) return;
+    showToast('Eliminando definitivamente...');
+    const exito = await deleteEquipoFromCloud(eq.id);
+    if (exito) {
+      state.currentEquipoId = null;
+      navigate('equipos');
+      showToast('Equipo eliminado permanentemente ✓');
+    }
+    return;
+  }
+
+  const confirmacion = confirm(`¿Enviar el equipo "${eq.cliente} - ${eq.descripcion}" a la papelera de reciclaje?\n\nPodrás restaurarlo en cualquier momento desde el filtro "Papelera".`);
   if (!confirmacion) return;
 
-  const idParaEliminar = eq.id;
-  const clienteNombre = eq.cliente;
-  showToast('Eliminando equipo...');
-
-  const exito = await deleteEquipoFromCloud(idParaEliminar);
-  if (exito) {
-    state.currentEquipoId = null;
-    navigate('equipos');
-    showToast(`Equipo "${clienteNombre}" eliminado con éxito ✓`);
-  }
+  eq.eliminado = true;
+  eq.fechaEliminacion = todayStr();
+  addHistorial(eq, 'Equipo enviado a papelera de reciclaje', 'info');
+  showToast('Equipo enviado a la papelera 🗑️');
+  await saveEquipoToCloud(eq);
+  state.currentEquipoId = null;
+  navigate('equipos');
 }
 
 async function eliminarEquipoDesdeModal() {
@@ -1043,15 +1066,41 @@ async function eliminarEquipoDesdeModal() {
 }
 
 async function eliminarEquipoDirecto(id, cliente) {
-  const confirmacion = confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente el equipo "${cliente}"?\n\nEsta acción borrará el equipo y sus procesos de la base de datos.`);
+  const eq = state.equipos.find(e => e.id === id);
+  if (!eq) return;
+
+  if (eq.eliminado) {
+    const confDef = confirm(`¿ELIMINAR DEFINITIVAMENTE el equipo "${cliente}"?\n\nEsta acción borrará el equipo de la base de datos de forma irreversible.`);
+    if (!confDef) return;
+    showToast('Borrando definitivamente...');
+    const exito = await deleteEquipoFromCloud(id);
+    if (exito) {
+      if (state.currentEquipoId === id) state.currentEquipoId = null;
+      showToast(`Equipo "${cliente}" eliminado definitivamente ✓`);
+    }
+    return;
+  }
+
+  const confirmacion = confirm(`¿Enviar el equipo "${cliente}" a la papelera de reciclaje?\n\nPodrás restaurarlo en cualquier momento desde el filtro "Papelera".`);
   if (!confirmacion) return;
 
-  showToast('Eliminando equipo...');
-  const exito = await deleteEquipoFromCloud(id);
-  if (exito) {
-    if (state.currentEquipoId === id) state.currentEquipoId = null;
-    showToast(`Equipo "${cliente}" eliminado ✓`);
-  }
+  eq.eliminado = true;
+  eq.fechaEliminacion = todayStr();
+  addHistorial(eq, 'Equipo enviado a papelera de reciclaje', 'info');
+  showToast('Equipo enviado a la papelera 🗑️');
+  await saveEquipoToCloud(eq);
+}
+
+async function restaurarEquipo(id) {
+  const eq = state.equipos.find(e => e.id === id);
+  if (!eq) return;
+
+  eq.eliminado = false;
+  delete eq.fechaEliminacion;
+  addHistorial(eq, 'Equipo restaurado de la papelera a lista activa', 'info');
+  showToast(`Equipo "${eq.cliente}" restaurado ✓`);
+  await saveEquipoToCloud(eq);
+  renderEquiposList();
 }
 
 function switchTab(tabName, btn) {
@@ -1346,8 +1395,18 @@ function openFotoModal(fotoId) {
    ============================================================ */
 function addHistorial(eq, texto, tipo = 'info') {
   if (!eq.historial) eq.historial = [];
-  eq.historial.unshift({ fecha: todayStr(), texto, tipo });
-  if (eq.historial.length > 50) eq.historial.pop();
+  const now = new Date();
+  const horaStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  const usuario = state.currentUser ? (state.currentUser.email || '').split('@')[0] : 'admin';
+  eq.historial.unshift({
+    timestamp: now.toISOString(),
+    fecha: todayStr(),
+    hora: horaStr,
+    usuario: usuario,
+    texto,
+    tipo
+  });
+  if (eq.historial.length > 300) eq.historial.pop();
 }
 
 function renderHistorial(eq) {
@@ -1363,7 +1422,7 @@ function renderHistorial(eq) {
       <div class="historial-icon">${iconos[h.tipo] || '📌'}</div>
       <div class="historial-content">
         <div class="historial-texto">${esc(h.texto)}</div>
-        <div class="historial-fecha">${fmtDate(h.fecha)}</div>
+        <div class="historial-fecha">🗓️ ${fmtDate(h.fecha)}${h.hora ? ` a las ${h.hora}` : ''}${h.usuario ? ` · 👤 ${esc(h.usuario)}` : ''}</div>
       </div>
     </div>
   `).join('');
@@ -1470,7 +1529,7 @@ function buildKPIHTML(eq) {
 
 function renderKPI() {
   const container = document.getElementById('kpi-content');
-  const activos = state.equipos.filter(e => e.estado === 'en_produccion');
+  const activos = state.equipos.filter(e => e.estado === 'en_produccion' && !e.eliminado);
 
   if (activos.length === 0) {
     container.innerHTML = `<div class="empty-state"><p>No hay equipos activos en fabricación para calcular KPIs.</p></div>`;
@@ -1657,7 +1716,7 @@ function updateReportePreview() {
 }
 
 function buildReporte(tipo) {
-  const activos = state.equipos.filter(e => e.estado === 'en_produccion');
+  const activos = state.equipos.filter(e => e.estado === 'en_produccion' && !e.eliminado);
   const hoy = new Date();
   const fechaStr = hoy.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const hora = hoy.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
@@ -1846,4 +1905,133 @@ async function deletePlantilla(plId) {
   if (!pl || !confirm(`¿Eliminar la plantilla "${pl.nombre}"?`)) return;
   showToast('Eliminando...');
   await deletePlantillaFromCloud(plId);
+}
+
+/* ============================================================
+   COPIA DE SEGURIDAD Y EXPORTACIÓN
+   ============================================================ */
+function renderBackupView() {
+  const elEq = document.getElementById('backup-total-equipos');
+  const elPl = document.getElementById('backup-total-plantillas');
+  const totalActivos = state.equipos.filter(e => !e.eliminado).length;
+  const totalPapelera = state.equipos.filter(e => e.eliminado).length;
+  if (elEq) elEq.textContent = `${totalActivos} activos / ${totalPapelera} en papelera (${state.equipos.length} total)`;
+  if (elPl) elPl.textContent = `${state.plantillas.length} configuradas`;
+}
+
+function descargarBackupJSON() {
+  const data = {
+    app: "FabriTrack",
+    version: "2.0",
+    fechaBackup: new Date().toISOString(),
+    totalEquipos: state.equipos.length,
+    equipos: state.equipos,
+    plantillas: state.plantillas
+  };
+  const str = JSON.stringify(data, null, 2);
+  const blob = new Blob([str], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `FabriTrack_Backup_${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Copia de seguridad descargada con éxito 💾');
+}
+
+function descargarEquiposExcel() {
+  const equipos = state.equipos.filter(e => !e.eliminado);
+  if (equipos.length === 0) {
+    showToast('No hay equipos para exportar');
+    return;
+  }
+
+  const cabeceras = [
+    'Cliente',
+    'Equipo / Descripción',
+    'Operario Responsable',
+    'Estado',
+    'Ritmo de Entrega',
+    'Fecha Inicio',
+    'Fecha Entrega',
+    'Progreso %',
+    'Procesos Terminados',
+    'Total Procesos',
+    'Duración Total Est. (días)',
+    'Notas'
+  ];
+
+  const filas = equipos.map(eq => {
+    const prog = calcProgreso(eq);
+    const detalleTiempos = calcDetalleTiempos(eq);
+    const proc = eq.procesos || [];
+    const term = proc.filter(p => p.estado === 'terminado').length;
+    const durTotal = proc.reduce((s, p) => s + (parseFloat(p.duracion) || 0), 0);
+
+    const limpiar = (txt) => `"${String(txt || '').replace(/"/g, '""')}"`;
+
+    return [
+      limpiar(eq.cliente),
+      limpiar(eq.descripcion),
+      limpiar(eq.operario),
+      limpiar(eq.estado),
+      limpiar(detalleTiempos.estadoFinal),
+      limpiar(eq.fechaInicio),
+      limpiar(eq.fechaEntrega),
+      prog,
+      term,
+      proc.length,
+      durTotal,
+      limpiar(eq.notas)
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + cabeceras.join(',') + '\n' + filas.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `FabriTrack_Equipos_${todayStr()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Planilla Excel (CSV) descargada ✓');
+}
+
+async function restaurarBackupJSON(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.equipos || !Array.isArray(data.equipos)) {
+        alert('El archivo seleccionado no tiene un formato válido de copia de seguridad de FabriTrack.');
+        return;
+      }
+
+      const confirmar = confirm(`¿Restaurar copia de seguridad del archivo "${file.name}"?\n\nContiene ${data.equipos.length} equipos y ${(data.plantillas || []).length} plantillas.\nSe guardarán en Firestore.`);
+      if (!confirmar) return;
+
+      showToast('Restaurando datos en Firestore...');
+
+      for (const eq of data.equipos) {
+        await saveEquipoToCloud(eq);
+      }
+
+      if (data.plantillas && Array.isArray(data.plantillas)) {
+        for (const pl of data.plantillas) {
+          await savePlantillaToCloud(pl);
+        }
+      }
+
+      showToast('¡Copia de seguridad restaurada con éxito! ✓');
+      event.target.value = '';
+      navigate('equipos');
+    } catch (err) {
+      console.error('Error al restaurar JSON:', err);
+      alert('Error al leer o procesar el archivo JSON de respaldo.');
+    }
+  };
+  reader.readAsText(file);
 }
