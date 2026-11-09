@@ -1,5 +1,5 @@
-// FabriTrack - Service Worker v6 (Corrección KPI tareas mismo día y alertas de plazos)
-const CACHE_NAME = 'fabricatrack-v6';
+// FabriTrack - Service Worker v7 (Cálculo sin domingos y días laborables reales)
+const CACHE_NAME = 'fabricatrack-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

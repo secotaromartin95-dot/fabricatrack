@@ -543,6 +543,25 @@ function diffDays(a, b) {
   return Math.round((db - da) / 86400000);
 }
 
+// Días laborables de taller (Lunes a Sábado, domingos no se trabaja)
+function diffDiasLaborables(desde, hasta) {
+  if (!desde || !hasta) return 0;
+  const da = new Date(desde + 'T12:00:00');
+  const db = new Date(hasta + 'T12:00:00');
+  const inverso = db < da;
+  let cursor = new Date(inverso ? db : da);
+  const fin = new Date(inverso ? da : db);
+
+  let laborables = 0;
+  while (cursor < fin) {
+    cursor.setDate(cursor.getDate() + 1);
+    if (cursor.getDay() !== 0) { // 0 = Domingo
+      laborables++;
+    }
+  }
+  return inverso ? -laborables : laborables;
+}
+
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -566,38 +585,39 @@ function calcDetalleTiempos(equipo) {
   const hoy = todayStr();
   const procesos = equipo.procesos || [];
   const diasRestantesCalendario = equipo.fechaEntrega ? diffDays(hoy, equipo.fechaEntrega) : null;
+  const diasRestantesLaborables = equipo.fechaEntrega ? diffDiasLaborables(hoy, equipo.fechaEntrega) : null;
   
   // Suma de duraciones estimadas de los procesos que faltan terminar
-  const diasTrabajoPendientes = procesos
+  const diasTrabajoPendientes = Math.round(procesos
     .filter(p => p.estado !== 'terminado')
-    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
-  const diasTrabajoTotal = procesos.reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
-  const diasTrabajoTerminado = procesos
+    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0) * 10) / 10;
+  const diasTrabajoTotal = Math.round(procesos.reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0) * 10) / 10;
+  const diasTrabajoTerminado = Math.round(procesos
     .filter(p => p.estado === 'terminado')
-    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0);
+    .reduce((sum, p) => sum + (parseFloat(p.duracion) || 0), 0) * 10) / 10;
   
   const procesosConAtraso = procesos.filter(p => p.estado === 'con_atraso').map(p => p.nombre);
 
-  // 1. Diagnóstico Automático Calculado
+  // 1. Diagnóstico Automático Calculado (sobre días laborables sin domingos)
   let estadoCalculado = 'ok';
   let motivo = 'Dentro de los plazos estimados';
 
   if (procesosConAtraso.length > 0) {
     estadoCalculado = 'atrasado';
     motivo = `Atraso en: ${procesosConAtraso.slice(0, 2).join(', ')}`;
-  } else if (diasRestantesCalendario !== null) {
-    if (diasRestantesCalendario < 0) {
+  } else if (diasRestantesLaborables !== null) {
+    if (diasRestantesLaborables < 0) {
       estadoCalculado = 'atrasado';
-      motivo = `Superó la fecha límite (${Math.abs(diasRestantesCalendario)}d de retraso)`;
-    } else if (diasTrabajoPendientes > diasRestantesCalendario) {
+      motivo = `Superó la fecha límite (${Math.abs(diasRestantesLaborables)}d laborables de retraso)`;
+    } else if (diasTrabajoPendientes > diasRestantesLaborables) {
       estadoCalculado = 'atrasado';
-      motivo = `Atrasado: faltan ${diasTrabajoPendientes}d de trabajo en procesos y solo quedan ${diasRestantesCalendario}d de plazo para entrega`;
-    } else if (diasTrabajoPendientes >= diasRestantesCalendario * 0.8 || diasRestantesCalendario <= 2) {
+      motivo = `Atrasado: faltan ${diasTrabajoPendientes}d de trabajo y solo quedan ${diasRestantesLaborables}d laborables (${diasRestantesCalendario}d corridos, sin domingos)`;
+    } else if (diasTrabajoPendientes >= diasRestantesLaborables * 0.8 || diasRestantesLaborables <= 2) {
       estadoCalculado = 'riesgo';
-      motivo = `Con lo justo: restan ${diasTrabajoPendientes}d de procesos vs ${diasRestantesCalendario}d de plazo`;
+      motivo = `Con lo justo: restan ${diasTrabajoPendientes}d de trabajo vs ${diasRestantesLaborables}d laborables disponibles`;
     } else {
       estadoCalculado = 'ok';
-      motivo = `Buen ritmo: ${diasTrabajoPendientes}d de trabajo en ${diasRestantesCalendario}d disponibles`;
+      motivo = `Buen ritmo: ${diasTrabajoPendientes}d de trabajo en ${diasRestantesLaborables}d laborables disponibles`;
     }
   } else {
     // Si no tiene fecha de entrega
@@ -615,6 +635,7 @@ function calcDetalleTiempos(equipo) {
 
   return {
     diasRestantesCalendario,
+    diasRestantesLaborables,
     diasTrabajoPendientes,
     diasTrabajoTotal,
     diasTrabajoTerminado,
@@ -754,14 +775,14 @@ function renderEquipoCard(equipo) {
   const atrasados = procesos.filter(p => p.estado === 'con_atraso').map(p => p.nombre);
   const diasRestantes = equipo.fechaEntrega ? diffDays(todayStr(), equipo.fechaEntrega) : null;
 
+  const detalleTiempos = calcDetalleTiempos(equipo);
   let diasStr = '';
-  if (diasRestantes !== null) {
-    if (diasRestantes < 0) diasStr = `⚠️ ${Math.abs(diasRestantes)}d de atraso`;
-    else if (diasRestantes === 0) diasStr = '⚠️ Entrega hoy';
-    else diasStr = `📅 Entrega en ${diasRestantes}d`;
+  if (detalleTiempos.diasRestantesLaborables !== null) {
+    if (detalleTiempos.diasRestantesLaborables < 0) diasStr = `⚠️ ${Math.abs(detalleTiempos.diasRestantesLaborables)}d laborables de atraso`;
+    else if (detalleTiempos.diasRestantesLaborables === 0) diasStr = '⚠️ Entrega hoy';
+    else diasStr = `📅 ${detalleTiempos.diasRestantesLaborables}d laborables (${detalleTiempos.diasRestantesCalendario}d corridos)`;
   }
 
-  const detalleTiempos = calcDetalleTiempos(equipo);
   let ritmoBadge = '';
   if (equipo.estado !== 'terminado' && equipo.estado !== 'pausado') {
     const ritmoIcon = { ok: '🟢 A tiempo', riesgo: '🟡 En riesgo', atrasado: '🔴 Atrasado' }[detalleTiempos.estadoFinal] || '🟢 A tiempo';
@@ -849,18 +870,24 @@ function renderEquipoDetalle() {
     <p>${esc(eq.descripcion)}</p>
   `;
 
-  const hoy = todayStr();
-  const diasRestantes = eq.fechaEntrega ? diffDays(hoy, eq.fechaEntrega) : null;
+  const detalleTiempos = calcDetalleTiempos(eq);
   let diasClass = '';
   let diasTexto = '-';
-  if (diasRestantes !== null) {
-    if (diasRestantes < 0) { diasClass = 'danger'; diasTexto = `${Math.abs(diasRestantes)} días ATRASADO`; }
-    else if (diasRestantes === 0) { diasClass = 'warning'; diasTexto = 'Entrega HOY'; }
-    else if (diasRestantes <= 2) { diasClass = 'warning'; diasTexto = `${diasRestantes} días restantes`; }
-    else { diasTexto = `${diasRestantes} días restantes`; }
+  if (detalleTiempos.diasRestantesLaborables !== null) {
+    if (detalleTiempos.diasRestantesLaborables < 0) {
+      diasClass = 'danger';
+      diasTexto = `${Math.abs(detalleTiempos.diasRestantesLaborables)} días laborables ATRASADO`;
+    } else if (detalleTiempos.diasRestantesLaborables === 0) {
+      diasClass = 'warning';
+      diasTexto = 'Entrega HOY';
+    } else if (detalleTiempos.diasRestantesLaborables <= 2) {
+      diasClass = 'warning';
+      diasTexto = `${detalleTiempos.diasRestantesLaborables} días laborables restantes`;
+    } else {
+      diasTexto = `${detalleTiempos.diasRestantesLaborables} días laborables restantes`;
+    }
   }
 
-  const detalleTiempos = calcDetalleTiempos(eq);
   const ritmoIconos = {
     ok: '🟢 A tiempo',
     riesgo: '🟡 En riesgo',
@@ -890,7 +917,7 @@ function renderEquipoDetalle() {
       <span class="info-label">Entrega estimada</span>
       <span class="info-value">${fmtDate(eq.fechaEntrega)}</span>
     </div>
-    ${diasRestantes !== null ? `<div class="info-item"><span class="info-label">Plazo</span><span class="info-value ${diasClass}">${diasTexto}</span></div>` : ''}
+    ${detalleTiempos.diasRestantesLaborables !== null ? `<div class="info-item"><span class="info-label">Plazo de entrega</span><span class="info-value ${diasClass}">${diasTexto} (${detalleTiempos.diasRestantesCalendario}d corridos, sin domingos)</span></div>` : ''}
     ${eq.notas ? `<div class="info-item" style="flex-basis:100%"><span class="info-label">Observaciones</span><span class="info-value">${esc(eq.notas)}</span></div>` : ''}
     <div class="info-item ritmo-box" style="flex-basis:100%;margin-top:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -904,7 +931,7 @@ function renderEquipoDetalle() {
         <span class="ritmo-motivo-text">${esc(detalleTiempos.motivo)}</span>
       </div>
       <div style="font-size:11px;color:var(--gray-600);margin-bottom:8px;">
-        ${detalleTiempos.diasRestantesCalendario !== null ? `📅 Plazo: <b>${detalleTiempos.diasRestantesCalendario}d</b> restantes | ⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos` : `⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos (sin fecha fijada)`}
+        ${detalleTiempos.diasRestantesLaborables !== null ? `📅 Plazo: <b>${detalleTiempos.diasRestantesLaborables}d laborables</b> (${detalleTiempos.diasRestantesCalendario}d corridos, sin domingos) | ⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos` : `⏱️ Trabajo pendiente: <b>${detalleTiempos.diasTrabajoPendientes}d</b> en procesos (sin fecha fijada)`}
       </div>
       <div class="ritmo-selector">
         <span style="font-size:11px;font-weight:700;color:var(--gray-600);align-self:center;">Cambiar ritmo:</span>
@@ -1396,11 +1423,11 @@ function buildKPIHTML(eq) {
     <div class="kpi-row"><span class="kpi-label">Procesos con atraso reportado</span><span class="kpi-value danger">${conAtraso}</span></div>
     <div class="kpi-row"><span class="kpi-label">Duración total estimada en procesos</span><span class="kpi-value">${durTotal} días</span></div>
     <div class="kpi-row"><span class="kpi-label">Días de procesos completados</span><span class="kpi-value ok">${durTerminada} días</span></div>
-    <div class="kpi-row"><span class="kpi-label">Trabajo pendiente por realizar</span><span class="kpi-value ${detalleTiempos.diasTrabajoPendientes > (detalleTiempos.diasRestantesCalendario || 999) ? 'danger' : ''}">${detalleTiempos.diasTrabajoPendientes} días</span></div>
+    <div class="kpi-row"><span class="kpi-label">Trabajo pendiente por realizar</span><span class="kpi-value ${detalleTiempos.diasTrabajoPendientes > (detalleTiempos.diasRestantesLaborables ?? 999) ? 'danger' : ''}">${detalleTiempos.diasTrabajoPendientes} días</span></div>
     ${eq.fechaEntrega ? `
       <div class="kpi-row">
-        <span class="kpi-label">Plazo calendario restante hasta entrega</span>
-        <span class="kpi-value ${detalleTiempos.diasRestantesCalendario < 0 || detalleTiempos.diasTrabajoPendientes > detalleTiempos.diasRestantesCalendario ? 'danger' : (detalleTiempos.diasRestantesCalendario <= 2 ? 'warning' : 'ok')}">${detalleTiempos.diasRestantesCalendario} días</span>
+        <span class="kpi-label">Días laborables disponibles (sin domingos)</span>
+        <span class="kpi-value ${detalleTiempos.diasRestantesLaborables < 0 || detalleTiempos.diasTrabajoPendientes > detalleTiempos.diasRestantesLaborables ? 'danger' : (detalleTiempos.diasRestantesLaborables <= 2 ? 'warning' : 'ok')}">${detalleTiempos.diasRestantesLaborables} días laborables (${detalleTiempos.diasRestantesCalendario}d corridos)</span>
       </div>` : ''}
   </div>
 
@@ -1408,7 +1435,7 @@ function buildKPIHTML(eq) {
     <h3>⏱ Estado y Duración por Subproceso</h3>
     <div class="kpi-proceso-bar">
       ${procesos.map(p => {
-        const durReal = (p.fechaInicio && p.fechaFin) ? Math.max(1, diffDays(p.fechaInicio, p.fechaFin)) : null;
+        const durReal = (p.fechaInicio && p.fechaFin) ? Math.max(1, diffDiasLaborables(p.fechaInicio, p.fechaFin)) : null;
         const durEst = parseFloat(p.duracion) || 0;
         const durParaBarra = durReal !== null ? durReal : (durEst || 1);
         const barra = Math.min(100, (durParaBarra / (durTotal || 1)) * 100);
@@ -1428,7 +1455,7 @@ function buildKPIHTML(eq) {
   <div class="kpi-card">
     <h3>📅 Tiempos Reales vs Estimados</h3>
     ${procesosConDuracion.map(p => {
-      const real = Math.max(1, diffDays(p.fechaInicio, p.fechaFin));
+      const real = Math.max(1, diffDiasLaborables(p.fechaInicio, p.fechaFin));
       const est = parseFloat(p.duracion) || 0;
       const diff = real - est;
       const cls = diff > 0 ? 'danger' : (diff < 0 ? 'ok' : '');
@@ -1699,8 +1726,8 @@ function buildReporte(tipo) {
     }
 
     if (eq.fechaEntrega) {
-      const dias = diffDays(todayStr(), eq.fechaEntrega);
-      const aviso = dias < 0 ? `⚠️ (${Math.abs(dias)} días de atraso)` : `(${dias} días para entrega)`;
+      const diasLab = detalleTiempos.diasRestantesLaborables !== null ? detalleTiempos.diasRestantesLaborables : diffDays(todayStr(), eq.fechaEntrega);
+      const aviso = diasLab < 0 ? `⚠️ (${Math.abs(diasLab)} días laborables de atraso)` : `(${diasLab} días laborables restantes)`;
       lines.push(`Fecha estimada de entrega: ${fmtDate(eq.fechaEntrega)} ${aviso}`);
     }
     lines.push('');
